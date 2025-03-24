@@ -15,6 +15,7 @@ export interface AgentConfig {
   sub_agents?: Agent[];
   tools?: ToolCall[];
   model?: string;
+  logging?: boolean;
   web_search?: {
     enabled: boolean;
     config?: {
@@ -44,6 +45,7 @@ export class Agent {
     if (!config.purpose) throw new Error("Purpose is required");
     if (!config.name) throw new Error("Name is required");
     if (!config.model) config.model = "gpt-4o";
+    if (!config.logging) config.logging = true;
 
     this.config = config;
 
@@ -54,6 +56,12 @@ export class Agent {
           .map((agent) => agent.config.name)
           .join(", ")}`,
       });
+    }
+  }
+
+  private Log(message: string) {
+    if (this.config.logging) {
+      console.log(`[${this.config.name}]: ${message}`);
     }
   }
 
@@ -172,22 +180,21 @@ export class Agent {
             );
 
             if (sub_agent) {
-              console.log(
-                `${this.config.name} agent calling sub-agent: ${sub_agent.config.name}`
+              this.Log(
+                `Calling sub-agent: ${args.sub_agent} with request: ${args.request}`
               );
               const sub_agent_result = await this.CallSubAgent(
                 sub_agent,
                 args.request
               );
+              this.Log(`${args.sub_agent} result: ${sub_agent_result}`);
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
                 output: sub_agent_result,
               });
             } else {
-              console.log(
-                `- Error: Sub-agent '${args.sub_agent}' not found. ${this.config.name} agent`
-              );
+              this.Log(`Error: Sub-agent '${args.sub_agent}' not found.`);
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
@@ -200,8 +207,8 @@ export class Agent {
             );
 
             if (tool) {
-              console.log(
-                `${this.config.name} agent calling tool: ${tool.name}`
+              this.Log(
+                `Calling tool: ${tool.name} with arguments: ${output.arguments}`
               );
               const args = JSON.parse(output.arguments);
               const tool_result = tool.callback(args);
@@ -211,9 +218,7 @@ export class Agent {
                 output: anything_to_string(tool_result),
               });
             } else {
-              console.log(
-                `- Error: Tool '${output.name}' not found. ${this.config.name} agent`
-              );
+              this.Log(`Error: Tool '${output.name}' not found.`);
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
