@@ -45,6 +45,12 @@ async function main() {
 main().catch(console.error);
 ```
 
+## Example Projects
+
+### Loom-Agents Code: Open Source Coding CLI Agent
+
+[Loom-Agents Code](https://github.com/ItsJustMeChris/loom-agents-code) is an open source CLI agent designed for coding tasks, similar to Claude Code. This project demonstrates how to use the LOOM framework to orchestrate multiple specialized agents for tasks like code generation, debugging, code review, and documentation. It serves as a practical example of building a composable, hierarchical AI system that can efficiently manage coding-related workflows.
+
 ## Creating Hierarchical Agent Systems
 
 Agents can be composed hierarchically, with parent agents delegating tasks to specialized child agents:
