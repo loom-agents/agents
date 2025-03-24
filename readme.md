@@ -21,7 +21,7 @@ This project provides a simple yet powerful way to create AI agents that can:
 ## Installation
 
 ```bash
-npm install openai-agent-framework
+npm install loom-agents
 ```
 
 ## Quick Start
