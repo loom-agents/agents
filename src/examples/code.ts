@@ -10,10 +10,10 @@ async function main() {
     name: "BashTool",
     description: "Executes shell commands in your environment",
     parameters: { command: { type: "string" } },
-    callback: ({ command }) => {
+    callback: ({ command }: { command: string }) => {
       try {
         return execSync(command).toString();
-      } catch (error) {
+      } catch (error: Error | any) {
         return `Error executing command: ${error.message}`;
       }
     },
@@ -23,15 +23,15 @@ async function main() {
     name: "GlobTool",
     description: "Finds files based on pattern matching",
     parameters: { pattern: { type: "string" } },
-    callback: ({ pattern }) => {
+    callback: ({ pattern }: { pattern: string }) => {
       try {
         const formattedPattern = pattern
           .split(" ")
-          .map((part) => part.trim())
+          .map((part: string) => part.trim())
           .join("");
         const results = glob.sync(formattedPattern);
         return results.length > 0 ? results : "No files matching pattern found";
-      } catch (error) {
+      } catch (error: Error | any) {
         return `Error in pattern matching: ${error.message}`;
       }
     },
@@ -41,7 +41,7 @@ async function main() {
     name: "GrepTool",
     description: "Searches for patterns in file contents",
     parameters: { pattern: { type: "string" }, file: { type: "string" } },
-    callback: ({ pattern, file }) => {
+    callback: ({ pattern, file }: { pattern: string; file: string }) => {
       try {
         if (!fs.existsSync(file)) {
           return `File ${file} does not exist`;
@@ -54,7 +54,7 @@ async function main() {
         return matches.length > 0
           ? matches
           : `No matches found for pattern "${pattern}" in ${file}`;
-      } catch (error) {
+      } catch (error: Error | any) {
         return `Error searching file: ${error.message}`;
       }
     },
@@ -64,7 +64,7 @@ async function main() {
     name: "LSTool",
     description: "Lists files and directories",
     parameters: { path: { type: "string" } },
-    callback: ({ path }) => {
+    callback: ({ path }: { path: string }) => {
       try {
         // Default to current directory if path is empty
         const dirPath = path.trim() === "" ? "." : path;
@@ -82,7 +82,7 @@ async function main() {
         return items.map(
           (dirent) => `${dirent.name}${dirent.isDirectory() ? "/" : ""}`
         );
-      } catch (error) {
+      } catch (error: Error | any) {
         return `Error listing directory: ${error.message}`;
       }
     },
@@ -92,7 +92,7 @@ async function main() {
     name: "FileReadTool",
     description: "Reads the contents of files",
     parameters: { file: { type: "string" } },
-    callback: ({ file }) => {
+    callback: ({ file }: { file: string }) => {
       try {
         if (!fs.existsSync(file)) {
           return `File ${file} does not exist`;
@@ -100,7 +100,7 @@ async function main() {
 
         const content = fs.readFileSync(file, "utf8");
         return content.length > 0 ? content : `File ${file} is empty`;
-      } catch (error) {
+      } catch (error: Error | any) {
         return `Error reading file: ${error.message}`;
       }
     },
@@ -113,7 +113,7 @@ async function main() {
       file: { type: "string" },
       content: { type: "string" },
     },
-    callback: ({ file, content }) => {
+    callback: ({ file, content }: { file: string; content: string }) => {
       try {
         const action = fs.existsSync(file) ? "updated" : "created";
 
@@ -125,7 +125,7 @@ async function main() {
 
         fs.writeFileSync(file, content);
         return `File ${file} successfully ${action}`;
-      } catch (error) {
+      } catch (error: Error | any) {
         return `Error editing file: ${error.message}`;
       }
     },
