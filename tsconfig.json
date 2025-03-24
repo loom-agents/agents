@@ -9,6 +9,8 @@
     "moduleResolution": "node",
     "strict": true,
     "sourceMap": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "declaration": true
+  },
+  "exclude": ["src/examples"]
 }
