@@ -1,4 +1,4 @@
-# open-agent
+# LOOM ([L]ightweight [O]rchestration [O]f [M]ultiple agents)
 
 A lightweight, composable framework for building hierarchical AI agent systems using OpenAI's API.
 
