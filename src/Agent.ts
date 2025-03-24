@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { ResponseInputItem } from "openai/resources/responses/responses";
+import { Tracing } from "./Tracing";
 const openai = new OpenAI();
 
 export interface ToolCall {
@@ -28,6 +29,7 @@ export interface AgentConfig {
       };
     };
   };
+  messages?: ResponseInputItem[];
 }
 
 const anything_to_string = (value: any) => {
@@ -38,6 +40,8 @@ const anything_to_string = (value: any) => {
 };
 
 export class Agent {
+  public trace: Tracing = new Tracing({});
+
   private config: AgentConfig;
   private messages: ResponseInputItem[] = [];
 
@@ -46,8 +50,10 @@ export class Agent {
     if (!config.name) throw new Error("Name is required");
     if (!config.model) config.model = "gpt-4o";
     if (!config.logging) config.logging = true;
+    if (!config.messages) config.messages = [];
 
     this.config = config;
+    this.messages = config.messages;
 
     if (this.config.sub_agents) {
       this.messages.push({
@@ -56,12 +62,6 @@ export class Agent {
           .map((agent) => agent.config.name)
           .join(", ")}`,
       });
-    }
-  }
-
-  private Log(message: string) {
-    if (this.config.logging) {
-      console.log(`[${this.config.name}] ${message}`);
     }
   }
 
@@ -180,21 +180,47 @@ export class Agent {
             );
 
             if (sub_agent) {
-              this.Log(
-                `Calling sub-agent: ${args.sub_agent} with request: ${args.request}`
-              );
+              const sub_agent_trace = this.trace.StartAction(`CallSubAgent`, {
+                sub_agent: args.sub_agent,
+                request: args.request,
+              });
+
+              const agent_to_call = sub_agent.Clone({
+                messages: this.messages.filter((msg) => {
+                  if (msg.type !== "function_call") {
+                    return true;
+                  }
+                  // Only include function call messages that have a corresponding output
+                  return this.messages.some(
+                    (m) =>
+                      m.type === "function_call_output" &&
+                      m.call_id === msg.call_id
+                  );
+                }),
+              });
+
               const sub_agent_result = await this.CallSubAgent(
-                sub_agent,
+                agent_to_call,
                 args.request
               );
-              this.Log(`${args.sub_agent} result: ${sub_agent_result}`);
+
+              this.trace.LogAction(...agent_to_call.trace.GetLog());
+
+              this.trace.FinishAction(
+                sub_agent_trace,
+                anything_to_string(sub_agent_result),
+                "success"
+              );
+
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
                 output: sub_agent_result,
               });
             } else {
-              this.Log(`Error: Sub-agent '${args.sub_agent}' not found.`);
+              this.trace.LogRaw(
+                `Error: Sub-agent '${args.sub_agent}' not found.`
+              );
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
@@ -207,18 +233,24 @@ export class Agent {
             );
 
             if (tool) {
-              this.Log(
-                `Calling tool: ${tool.name} with arguments: ${output.arguments}`
-              );
+              const tool_call_trace = this.trace.StartAction(`ToolCall`, {
+                tool_name: tool.name,
+                arguments: output.arguments,
+              });
               const args = JSON.parse(output.arguments);
-              const tool_result = tool.callback(args);
+              const tool_result = await tool.callback(args);
+              this.trace.FinishAction(
+                tool_call_trace,
+                anything_to_string(tool_result),
+                "success"
+              );
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
                 output: anything_to_string(tool_result),
               });
             } else {
-              this.Log(`Error: Tool '${output.name}' not found.`);
+              this.trace.LogRaw(`Error: Tool '${output.name}' not found.`);
               this.messages.push({
                 type: "function_call_output",
                 call_id: output.call_id,
@@ -233,5 +265,30 @@ export class Agent {
     }
 
     return "Maximum iterations reached without producing a final response.";
+  }
+
+  /*
+    Clone the agent to create a new instance of it. 
+    This is useful when you want to run the agent in parallel.
+  */
+  public Clone(config?: Partial<AgentConfig>): Agent {
+    return new Agent({
+      ...this.config,
+      ...config,
+    });
+  }
+
+  /*
+    When an agent is transformed into a tool it no longer recieves the conversation context. 
+  */
+  public AsTool(): ToolCall {
+    return {
+      name: this.config.name,
+      parameters: { request: { type: "string" } },
+      callback: ({ request }: { request: string }) => {
+        return this.run(request);
+      },
+      description: this.config.purpose,
+    };
   }
 }
