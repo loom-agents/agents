@@ -61,7 +61,7 @@ export class Agent {
 
   private Log(message: string) {
     if (this.config.logging) {
-      console.log(`[${this.config.name}]: ${message}`);
+      console.log(`[${this.config.name}] ${message}`);
     }
   }
 
