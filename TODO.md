@@ -7,3 +7,4 @@
 - [ ] Refactor / implement a tracing system
 - [ ] Debugging
 - [ ] Find bugs
+- [X] Add completions API support (enables nearly any model/api router support)

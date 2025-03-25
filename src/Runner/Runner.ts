@@ -1,7 +1,8 @@
 import { ResponseInputItem } from "openai/resources/responses/responses";
-import { Agent, AgentResponse } from "./Agent";
-import { Tracing } from "./Tracing";
+import { Agent, AgentRequest } from "../Agents/Agent";
+import { Tracing } from "../Tracing/Tracing";
 import { v4 as uuidv4 } from "uuid";
+import { ChatCompletionMessageParam } from "openai/resources/chat";
 
 export interface RunnerConfig {
   max_depth?: number;
@@ -39,20 +40,29 @@ export class Runner {
     this.agent = agent;
   }
 
-  async run(input: string | ResponseInputItem[]): Promise<any> {
+  async run(
+    input:
+      | string
+      | AgentRequest<ResponseInputItem>
+      | AgentRequest<ChatCompletionMessageParam>
+  ): Promise<any> {
     let depth = 0;
     const maxMaxDepth = this.config.max_depth || 10;
 
-    let result: AgentResponse = await this.agent.run(input);
+    let result: {
+      status: string;
+      final_message: string;
+      context: ChatCompletionMessageParam[] | ResponseInputItem[];
+    } = await this.agent.run(input);
 
     do {
       depth += 1;
-      if (result.toStatus() === "completed") {
+      if (result.status === "completed") {
         return result;
       }
 
-      result = await this.agent.run(result.toInputList());
-    } while (depth < maxMaxDepth && result.toStatus() !== "completed");
+      result = await this.agent.run({ context: result.context });
+    } while (depth < maxMaxDepth && result.status !== "completed");
 
     return result;
   }

@@ -1,20 +1,23 @@
 {
   "name": "loom-agents",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "playwright test"
   },
   "author": "",
   "license": "MIT",
   "description": "",
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
+    "@types/node": "^22.13.13",
+    "barrelsby": "^2.8.1",
     "typescript": "^5.8.2"
   },
   "dependencies": {
     "openai": "^4.89.0",
-    "reflect-metadata": "^0.2.2",
     "uuid": "^11.1.0"
   },
   "type": "commonjs",
