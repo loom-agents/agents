@@ -225,9 +225,13 @@ export class Agent {
             throw new Error(`Sub-agent '${args.sub_agent}' not found.`);
           }
 
-          const sub_agent_result: AgentResponse = await sub_agent.run(
-            `You were invoked with the follow request, as a sub-agent tool call - {${outputItem.arguments}}`
-          );
+          const sub_agent_result: AgentResponse = await sub_agent.run([
+            ...inputItems,
+            {
+              role: "user",
+              content: `You were invoked with the follow request, as a sub-agent tool call - {${outputItem.arguments}}`,
+            },
+          ]);
 
           functionCalls.push({
             type: "function_call_output",
