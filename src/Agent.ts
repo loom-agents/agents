@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { ResponseInputItem } from "openai/resources/responses/responses";
-import { Tracing } from "./Tracing";
+import { v4 } from "uuid";
+
 const openai = new OpenAI();
 
 export interface ToolCall {
@@ -10,89 +11,120 @@ export interface ToolCall {
   description: string;
 }
 
+export interface WebSearchConfig {
+  enabled: boolean;
+  config?: {
+    search_context_size?: "high" | "medium" | "low";
+    user_location?: {
+      type: "approximate";
+      country?: string;
+      city?: string;
+      region?: string;
+    };
+  };
+}
+
 export interface AgentConfig {
   name: string;
   purpose: string;
   sub_agents?: Agent[];
   tools?: ToolCall[];
   model?: string;
-  logging?: boolean;
-  web_search?: {
-    enabled: boolean;
-    config?: {
-      search_context_size?: "high" | "medium" | "low";
-      user_location?: {
-        type?: "approximate";
-        country?: string;
-        city?: string;
-        region?: string;
-      };
-    };
-  };
-  messages?: ResponseInputItem[];
+  web_search?: WebSearchConfig;
+  timeout_ms?: number;
 }
 
-const anything_to_string = (value: any) => {
-  if (typeof value === "object") {
-    return JSON.stringify(value);
+const valueToString = (value: any): string => {
+  if (value === null || value === undefined) {
+    return String(value);
   }
-  return value.toString();
-};
 
-export class Agent {
-  public trace: Tracing = new Tracing({});
-
-  private config: AgentConfig;
-  private messages: ResponseInputItem[] = [];
-
-  constructor(config: AgentConfig) {
-    if (!config.purpose) throw new Error("Purpose is required");
-    if (!config.name) throw new Error("Name is required");
-    if (!config.model) config.model = "gpt-4o";
-    if (!config.logging) config.logging = true;
-    if (!config.messages) config.messages = [];
-
-    this.config = config;
-    this.messages = config.messages;
-
-    if (this.config.sub_agents) {
-      this.messages.push({
-        role: "system" as const,
-        content: `You can query the following 'sub_agents' with the 'CallSubAgent' tool: ${this.config.sub_agents
-          .map((agent) => agent.config.name)
-          .join(", ")}`,
-      });
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch (error: Error | any) {
+      return `[Object: Serialization Error - ${error.message}]`;
     }
   }
 
-  async CallSubAgent(sub_agent: Agent, request: string) {
-    return await sub_agent.run(request, 10);
+  return String(value);
+};
+
+export class AgentResponse {
+  private status: "completed" | "error" | "pending" = "pending";
+  private inputItems: ResponseInputItem[] = [];
+  private outputItems: ResponseInputItem[] | ResponseInputItem;
+
+  constructor(
+    inputItems: ResponseInputItem[],
+    outputItems: ResponseInputItem[] | ResponseInputItem,
+    status: "completed" | "error" | "pending"
+  ) {
+    this.inputItems = inputItems;
+    this.outputItems = outputItems;
+    this.status = status;
   }
 
-  private GetTools() {
+  public toStatus(): "completed" | "error" | "pending" {
+    return this.status;
+  }
+
+  public toInputList(): ResponseInputItem[] {
+    const outputItems = Array.isArray(this.outputItems)
+      ? this.outputItems
+      : [this.outputItems];
+
+    return [...this.inputItems, ...outputItems];
+  }
+
+  public getContent(): string {
+    if (this.status !== "completed") {
+      return "";
+    }
+
+    return (this.outputItems as any).content;
+  }
+}
+
+export class Agent {
+  private config: AgentConfig;
+  private defaultModel = "gpt-4o";
+  private defaultTimeout = 60000;
+
+  constructor(config: AgentConfig) {
+    if (!config.purpose) throw new Error("Agent purpose is required");
+    if (!config.name) throw new Error("Agent name is required");
+
+    this.config = {
+      ...config,
+      model: config.model || this.defaultModel,
+      timeout_ms: config.timeout_ms || this.defaultTimeout,
+    };
+  }
+
+  private prepareTools(): any[] {
     const toolsArray = [];
-    if (this.config.tools) {
+
+    if (this.config.tools && this.config.tools.length > 0) {
       toolsArray.push(
-        ...this.config.tools.map((tool) => {
-          return {
-            type: "function" as const,
-            name: tool.name,
-            description: tool.description,
-            parameters: {
-              type: "object",
-              properties: tool.parameters,
-              required: Object.keys(tool.parameters),
-              additionalProperties: false,
-            },
-            strict: true,
-          };
-        })
+        ...this.config.tools.map((tool) => ({
+          type: "function",
+          name: tool.name,
+          description: tool.description,
+          parameters: {
+            type: "object",
+            properties: tool.parameters,
+            required: Object.keys(tool.parameters),
+            additionalProperties: false,
+          },
+          strict: true,
+        }))
       );
     }
 
-    if (this.config.sub_agents) {
+    if (this.config.sub_agents && this.config.sub_agents.length > 0) {
       toolsArray.push({
-        type: "function" as const,
+        type: "function",
         name: "CallSubAgent",
         description:
           "Pass an input to a sub agent for processing and return the output",
@@ -118,175 +150,145 @@ export class Agent {
 
     if (this.config.web_search?.enabled) {
       toolsArray.push({
-        type: "web_search_preview" as const,
-        config: this.config.web_search.config,
+        type: "web_search_preview",
+        ...this.config.web_search.config,
       });
     }
 
     return toolsArray;
   }
 
-  async run(request: string, maxIterations: number = 10): Promise<string> {
-    // Add the initial user request only once
-    this.messages.push({
-      role: "user" as const,
-      content: request,
+  async run(input: string | ResponseInputItem[]): Promise<any> {
+    const uuid = `AgentRun_${v4()}`;
+    console.log(`${uuid} - Running agent with input: ${input}`);
+    const inputItems: ResponseInputItem[] = Array.isArray(input)
+      ? input
+      : [{ role: "user", content: input }];
+
+    const result = await openai.responses.create({
+      model: this.config.model as string,
+      input: inputItems,
+      instructions: `You are an AI Agent, your purpose is to (${
+        this.config.purpose
+      }). ${
+        this.config.sub_agents && this.config.sub_agents.length > 0
+          ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: ${this.config.sub_agents
+              .map((agent) => `${agent.config.name} - ${agent.config.purpose}`)
+              .join(", ")}`
+          : ""
+      } Consider using all the tools available to you to achieve this. Start acting immediately.`,
+      tools: this.prepareTools(),
     });
 
-    let iteration = 0;
-
-    // Process the conversation in a loop
-    while (iteration < maxIterations) {
-      const result = await openai.responses.create({
-        model: this.config.model as string,
-        input: this.messages,
-        instructions: `You are an AI Agent, your purpose is to (${this.config.purpose}). Consider using all the tools available to you to achieve this. Start acting immediately.`,
-        tools: this.GetTools(),
-      });
-
-      // If there's a final output, return it
-      if (result.output_text) {
-        this.messages.push({
-          role: "assistant" as const,
+    if (result.output_text) {
+      return new AgentResponse(
+        inputItems,
+        {
+          role: "assistant",
           content: result.output_text,
-        });
-        return result.output_text;
-      }
-
-      // Check if there are unprocessed function calls
-      const hasFunctionCalls = result.output.some(
-        (output: any) =>
-          output.type === "function_call" &&
-          !this.messages.some(
-            (message) =>
-              message.type === "function_call_output" &&
-              message.call_id === output.call_id
-          )
+        },
+        "completed"
       );
-
-      if (!hasFunctionCalls) {
-        return "The agent completed without producing a final response. Or we do not support what it's trying to do.";
-      }
-
-      // Process each tool call
-      for (const output of result.output) {
-        this.messages.push(output);
-
-        if (output.type === "function_call") {
-          if (output.name === "CallSubAgent") {
-            const args = JSON.parse(output.arguments);
-            const sub_agent = this.config.sub_agents?.find(
-              (agent) => agent.config.name === args.sub_agent
-            );
-
-            if (sub_agent) {
-              const sub_agent_trace = this.trace.StartAction(`CallSubAgent`, {
-                sub_agent: args.sub_agent,
-                request: args.request,
-              });
-
-              const agent_to_call = sub_agent.Clone({
-                messages: this.messages.filter((msg) => {
-                  if (msg.type !== "function_call") {
-                    return true;
-                  }
-                  // Only include function call messages that have a corresponding output
-                  return this.messages.some(
-                    (m) =>
-                      m.type === "function_call_output" &&
-                      m.call_id === msg.call_id
-                  );
-                }),
-              });
-
-              const sub_agent_result = await this.CallSubAgent(
-                agent_to_call,
-                args.request
-              );
-
-              this.trace.LogAction(...agent_to_call.trace.GetLog());
-
-              this.trace.FinishAction(
-                sub_agent_trace,
-                anything_to_string(sub_agent_result),
-                "success"
-              );
-
-              this.messages.push({
-                type: "function_call_output",
-                call_id: output.call_id,
-                output: sub_agent_result,
-              });
-            } else {
-              this.trace.LogRaw(
-                `Error: Sub-agent '${args.sub_agent}' not found.`
-              );
-              this.messages.push({
-                type: "function_call_output",
-                call_id: output.call_id,
-                output: `Error: Sub-agent '${args.sub_agent}' not found.`,
-              });
-            }
-          } else {
-            const tool = this.config.tools?.find(
-              (tool) => tool.name === output.name
-            );
-
-            if (tool) {
-              const tool_call_trace = this.trace.StartAction(`ToolCall`, {
-                tool_name: tool.name,
-                arguments: output.arguments,
-              });
-              const args = JSON.parse(output.arguments);
-              const tool_result = await tool.callback(args);
-              this.trace.FinishAction(
-                tool_call_trace,
-                anything_to_string(tool_result),
-                "success"
-              );
-              this.messages.push({
-                type: "function_call_output",
-                call_id: output.call_id,
-                output: anything_to_string(tool_result),
-              });
-            } else {
-              this.trace.LogRaw(`Error: Tool '${output.name}' not found.`);
-              this.messages.push({
-                type: "function_call_output",
-                call_id: output.call_id,
-                output: `Error: Tool '${output.name}' not found.`,
-              });
-            }
-          }
-        }
-      }
-
-      iteration++;
     }
 
-    return "Maximum iterations reached without producing a final response.";
+    const hasFunctionCalls = result.output.some(
+      (output: any) =>
+        output.type === "function_call" &&
+        !inputItems.some(
+          (message) =>
+            message.type === "function_call_output" &&
+            message.call_id === output.call_id
+        )
+    );
+
+    if (!hasFunctionCalls) {
+      const errorMsg =
+        "The agent completed without producing a final response. Or we do not support what it's trying to do.";
+      return new AgentResponse(
+        inputItems,
+        {
+          role: "developer",
+          content: errorMsg,
+        },
+        "error"
+      );
+    }
+
+    const functionCalls: ResponseInputItem[] = [];
+    for (const outputItem of result.output) {
+      if (outputItem.type === "function_call") {
+        const args = JSON.parse(outputItem.arguments);
+        if (outputItem.name === "CallSubAgent") {
+          const sub_agent = this.config.sub_agents?.find(
+            (agent) => agent.config.name === args.sub_agent
+          );
+
+          if (!sub_agent) {
+            throw new Error(`Sub-agent '${args.sub_agent}' not found.`);
+          }
+
+          const sub_agent_result: AgentResponse = await sub_agent.run(
+            `You were invoked with the follow request, as a sub-agent tool call - {${outputItem.arguments}}`
+          );
+
+          functionCalls.push({
+            type: "function_call_output",
+            call_id: outputItem.call_id,
+            output:
+              sub_agent_result.toStatus() !== "completed"
+                ? `Error: ${sub_agent_result.toInputList()}`
+                : sub_agent_result.getContent(),
+          });
+        } else {
+          const tool = this.config.tools?.find(
+            (tool) => tool.name === outputItem.name
+          );
+
+          if (!tool) {
+            throw new Error(`Tool '${outputItem.name}' not found.`);
+          }
+
+          const result = await tool.callback(args);
+          functionCalls.push({
+            type: "function_call_output",
+            call_id: outputItem.call_id,
+            output: valueToString(result),
+          });
+        }
+        inputItems.push(outputItem);
+      }
+    }
+
+    return this.run([...inputItems, ...functionCalls]);
   }
 
-  /*
-    Clone the agent to create a new instance of it. 
-    This is useful when you want to run the agent in parallel.
-  */
-  public Clone(config?: Partial<AgentConfig>): Agent {
+  public clone(config?: Partial<AgentConfig>): Agent {
     return new Agent({
       ...this.config,
       ...config,
     });
   }
 
-  /*
-    When an agent is transformed into a tool it no longer recieves the conversation context. 
-  */
-  public AsTool(): ToolCall {
+  public asTool(parameters?: object): ToolCall {
     return {
-      name: this.config.name,
-      parameters: { request: { type: "string" } },
-      callback: ({ request }: { request: string }) => {
-        return this.run(request);
+      name: this.config.name.replace(/[^a-zA-Z0-9_-]/g, ""),
+      parameters: parameters
+        ? parameters
+        : {
+            request: {
+              type: "string",
+              description: `Request to send to the ${this.config.name.replace(
+                /[^a-zA-Z0-9_-]/g,
+                ""
+              )} agent`,
+            },
+          },
+      callback: async (...args) => {
+        return await this.run(
+          `You were invoked as a tool with the following request - ${JSON.stringify(
+            args
+          )}`
+        );
       },
       description: this.config.purpose,
     };

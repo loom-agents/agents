@@ -1,4 +1,4 @@
-import { Agent } from "../Agent";
+import { Agent, Runner } from "loom-agents";
 
 async function main() {
   const researchAgent = new Agent({
@@ -9,13 +9,18 @@ async function main() {
       config: {
         search_context_size: "medium",
         user_location: {
+          type: "approximate",
           country: "US",
         },
       },
     },
   });
 
-  const result = await researchAgent.run("What is the capital of Wisconsin?");
+  const runner = new Runner(researchAgent);
+  const result = await runner.run(
+    "Find information on the best restaurants in New York City"
+  );
+
   console.log(result);
 }
 

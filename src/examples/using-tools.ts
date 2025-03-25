@@ -1,4 +1,4 @@
-import { Agent } from "../Agent";
+import { Agent, Runner, ToolCall } from "loom-agents";
 
 async function main() {
   const timeAgent = new Agent({
@@ -9,21 +9,28 @@ async function main() {
         name: "GetTime",
         description: "Get the current time",
         parameters: {},
-        callback: () => new Date().toLocaleTimeString(),
+        callback: () => {
+          const time = new Date().toLocaleTimeString();
+          return {
+            success: true,
+            message: "Retrieved current time",
+            data: time,
+          };
+        },
       },
     ],
   });
 
-  // Use the time agent as a sub-agent in a farewell agent
   const farewellAgent = new Agent({
     name: "Farewell Agent",
     purpose: "Generate a contextual farewell message",
     sub_agents: [timeAgent],
   });
 
-  // The farewell agent can now use the time agent to include time information
-  const result = await farewellAgent.run("Say goodbye with the current time");
-  console.log(result); // "Goodbye! It's currently 2:45:30 PM where you are. Have a great rest of your day!"
+  const runner = new Runner(farewellAgent);
+  const result = await runner.run("Say goodbye with the current time");
+
+  console.log(result);
 }
 
 main().catch(console.error);
