@@ -13,7 +13,7 @@ This project provides a simple yet powerful way to create AI agents that can:
 ## Features
 
 - **Agent-Based Architecture**: Create specialized agents with distinct purposes and capabilities
-- **Hierarchical Composition**: Build complex systems by composing agents into parent-child relationships
+- **Hierarchical Composition**: Build complex systems by composing agents into parent/child relationships
 - **Tool Integration**: Extend agent capabilities by adding custom tools
 - **Web Search**: Enable agents to perform web searches for real-time information
 - **Automatic Recursion Management**: Built-in protection against infinite loops
@@ -28,7 +28,7 @@ npm install loom-agents
 ## Quick Start
 
 ```typescript
-import { Agent } from "./Agent";
+import { Agent, Runner } from "loom-agents";
 
 async function main() {
   // Create a simple agent
@@ -37,8 +37,8 @@ async function main() {
     purpose: "Generate friendly greetings",
   });
 
-  // Run the agent with a request
-  const result = await greetingAgent.run("Say hello to the user");
+  const runner = new Runner(greetingAgent);
+  const result = await runner.run("Say hello to the user");
   console.log(result);
 }
 
@@ -49,33 +49,50 @@ main().catch(console.error);
 
 ### Loom-Agents Code: Open Source Coding CLI Agent
 
-[Loom-Agents Code](https://github.com/ItsJustMeChris/loom-agents-code) is an open source CLI agent designed for coding tasks, similar to Claude Code. This project demonstrates how to use the LOOM framework to orchestrate multiple specialized agents for tasks like code generation, debugging, code review, and documentation. It serves as a practical example of building a composable, hierarchical AI system that can efficiently manage coding-related workflows.
+[Loom-Agents Code](https://github.com/loom-agents/loom-agents-code) is an open source CLI agent designed for coding tasks, similar to Claude Code. This project demonstrates how to use the LOOM framework to orchestrate multiple specialized agents for tasks like code generation, debugging, code review, and documentation. It serves as a practical example of building a composable, hierarchical AI system that can efficiently manage coding-related workflows.
 
 ## Creating Hierarchical Agent Systems
 
 Agents can be composed hierarchically, with parent agents delegating tasks to specialized child agents:
 
 ```typescript
-// Create specialized agents
-const mathTutor = new Agent({
-  name: "Math Tutor",
-  purpose: "Provide step-by-step math problem solutions",
-});
+import { Agent, Runner } from "loom-agents";
 
-const historyTutor = new Agent({
-  name: "History Tutor",
-  purpose: "Explain historical events with proper context",
-});
+async function main() {
+  // Create specialized tutor agents
+  const mathTutorAgent = new Agent({
+    name: "Math Tutor",
+    purpose:
+      "You provide help with math problems. Explain your reasoning at each step and include examples",
+  });
 
-// Create a parent agent that delegates to specialized agents
-const educationAgent = new Agent({
-  name: "Education Agent",
-  purpose: "Direct education questions to the appropriate specialist",
-  sub_agents: [mathTutor, historyTutor],
-});
+  const historyTutorAgent = new Agent({
+    name: "History Tutor",
+    purpose:
+      "You provide assistance with historical queries. Explain important events and context clearly",
+  });
 
-// The parent agent will automatically route questions to the appropriate sub-agent
-const result = await educationAgent.run("What is the quadratic formula?");
+  // Create the triage agent with sub-agents
+  const triageAgent = new Agent({
+    name: "Triage Agent",
+    purpose:
+      "Determine which agent to use based on the user's homework question",
+    sub_agents: [mathTutorAgent, historyTutorAgent],
+  });
+
+  const runner = new Runner(triageAgent);
+
+  // Test the implementation
+  const result1 = await runner.run("What is 2 + 2?");
+  console.log("Result 1:", result1);
+
+  const result2 = await runner.run(
+    "Who was the best president in American history?"
+  );
+  console.log("Result 2:", result2);
+}
+
+main().catch(console.error);
 ```
 
 ## Adding Custom Tools
@@ -83,23 +100,81 @@ const result = await educationAgent.run("What is the quadratic formula?");
 Extend agents with custom tools to interact with external systems:
 
 ```typescript
-const weatherAgent = new Agent({
-  name: "Weather Agent",
-  purpose: "Provide weather information",
-  tools: [
-    {
-      name: "GetCurrentWeather",
-      description: "Get the current weather for a location",
-      parameters: {
-        location: {
-          type: "string",
-          description: "The city and state, e.g., 'San Francisco, CA'",
+import { Agent, Runner, ToolCall } from "loom-agents";
+
+async function main() {
+  const timeAgent = new Agent({
+    name: "TimeAgent",
+    purpose: "Get the current time and handle time operations",
+    tools: [
+      {
+        name: "GetTime",
+        description: "Get the current time",
+        parameters: {},
+        callback: () => {
+          const time = new Date().toLocaleTimeString();
+          return {
+            success: true,
+            message: "Retrieved current time",
+            data: time,
+          };
         },
       },
-      callback: (args) => fetchWeatherData(args.location),
-    },
-  ],
-});
+    ],
+  });
+
+  const farewellAgent = new Agent({
+    name: "Farewell Agent",
+    purpose: "Generate a contextual farewell message",
+    sub_agents: [timeAgent],
+  });
+
+  const runner = new Runner(farewellAgent);
+  const result = await runner.run("Say goodbye with the current time");
+
+  console.log(result);
+}
+
+main().catch(console.error);
+```
+
+## Using Agents as Tools
+
+You can use agents as tools for other agents, allowing for flexible composition:
+
+```typescript
+import { Agent, Runner, ToolCall } from "loom-agents";
+
+async function main() {
+  const translationAgent = new Agent({
+    name: "Translation Agent",
+    purpose:
+      "I translate text into different languages, just let me know the language you want to translate to.",
+  });
+
+  const greetingAgent = new Agent({
+    name: "Greeting Agent",
+    purpose: "Generate a greeting",
+    tools: [
+      translationAgent.asTool({
+        request: {
+          type: "string",
+          description: `The text to translate`,
+        },
+        language: {
+          type: "string",
+          description: `The language to translate to`,
+        },
+      }),
+    ],
+  });
+
+  const runner = new Runner(greetingAgent);
+  const result = await runner.run("Say hello to the user in spanish");
+  console.log(result);
+}
+
+main().catch(console.error);
 ```
 
 ## Enabling Web Search
@@ -107,19 +182,80 @@ const weatherAgent = new Agent({
 Give your agents access to real-time information from the web:
 
 ```typescript
-const researchAgent = new Agent({
-  name: "Research Agent",
-  purpose: "Find up-to-date information on topics",
-  web_search: { 
-    enabled: true,
-    config: {
-      search_context_size: "medium",
-      user_location: {
-        country: "US",
+import { Agent, Runner } from "loom-agents";
+
+async function main() {
+  const researchAgent = new Agent({
+    name: "Research Agent",
+    purpose: "Find up-to-date information on topics",
+    web_search: {
+      enabled: true,
+      config: {
+        search_context_size: "medium",
+        user_location: {
+          type: "approximate",
+          country: "US",
+        },
       },
     },
-  },
-});
+  });
+
+  const runner = new Runner(researchAgent);
+  const result = await runner.run(
+    "Find information on the best restaurants in New York City"
+  );
+
+  console.log(result);
+}
+
+main().catch(console.error);
+```
+
+## Building Complex Research Systems
+
+Combine multiple agents with different capabilities to create powerful research systems:
+
+```typescript
+import { Agent, Runner } from "loom-agents";
+
+async function main() {
+  const researchAgent = new Agent({
+    name: "Research Agent",
+    purpose: "Gather information on topics",
+    web_search: {
+      enabled: true,
+    },
+  });
+
+  const writingAgent = new Agent({
+    name: "Writing Agent",
+    purpose: "Create well-structured content based on research",
+  });
+
+  const factCheckAgent = new Agent({
+    name: "Fact Check Agent",
+    purpose: "Verify factual accuracy of content",
+    web_search: {
+      enabled: true,
+    },
+  });
+
+  // Create the content production system
+  const deepResearchAgent = new Agent({
+    name: "Content Creation Agent",
+    purpose: "Produce high-quality, factually accurate articles.",
+    sub_agents: [researchAgent, writingAgent, factCheckAgent],
+  });
+
+  const runner = new Runner(deepResearchAgent);
+  const result = await runner.run(
+    "Create an article about recent advances in renewable energy, include citations from the researcher. Fact check your work."
+  );
+
+  console.log(result);
+}
+
+main().catch(console.error);
 ```
 
 ## Agent Configuration Options
@@ -132,56 +268,6 @@ const researchAgent = new Agent({
 | `sub_agents` | Agent[] | Child agents that can be called by this agent |
 | `tools` | ToolCall[] | Custom tools the agent can use |
 | `web_search` | object | Web search configuration |
-
-## Examples
-
-### Task Delegation System
-
-```typescript
-// Create specialized agents for different tasks
-const codeReviewAgent = new Agent({
-  name: "Code Review Agent",
-  purpose: "Review code for bugs and best practices",
-});
-
-const documentationAgent = new Agent({
-  name: "Documentation Agent",
-  purpose: "Generate documentation for code",
-});
-
-// Create a project manager agent that delegates to specialized agents
-const projectManager = new Agent({
-  name: "Project Manager",
-  purpose: "Coordinate software development tasks",
-  sub_agents: [codeReviewAgent, documentationAgent],
-});
-```
-
-### Agent with Custom Tools
-
-```typescript
-const timeAgent = new Agent({
-  name: "Time Agent",
-  purpose: "Provide time-related information",
-  tools: [
-    {
-      name: "GetCurrentTime",
-      description: "Get the current time",
-      parameters: {},
-      callback: () => new Date().toLocaleTimeString(),
-    },
-    {
-      name: "CalculateTimeDifference",
-      description: "Calculate the time difference between two time zones",
-      parameters: {
-        timezone1: { type: "string" },
-        timezone2: { type: "string" },
-      },
-      callback: (args) => calculateTimeDifference(args.timezone1, args.timezone2),
-    },
-  ],
-});
-```
 
 ## License
 
