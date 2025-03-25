@@ -170,9 +170,9 @@ export class Agent {
         this.config.purpose
       }). ${
         this.config.sub_agents && this.config.sub_agents.length > 0
-          ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: ${this.config.sub_agents
-              .map((agent) => `${agent.config.name} - ${agent.config.purpose}`)
-              .join(", ")}`
+          ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: {${this.config.sub_agents
+              .map((agent) => `${agent.config.name}`)
+              .join(", ")}}`
           : ""
       } Consider using all the tools available to you to achieve this. Start acting immediately.`,
       tools: this.prepareTools(),
