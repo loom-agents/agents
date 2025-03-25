@@ -159,8 +159,6 @@ export class Agent {
   }
 
   async run(input: string | ResponseInputItem[]): Promise<any> {
-    const uuid = `AgentRun_${v4()}`;
-    console.log(`${uuid} - Running agent with input: ${input}`);
     const inputItems: ResponseInputItem[] = Array.isArray(input)
       ? input
       : [{ role: "user", content: input }];
