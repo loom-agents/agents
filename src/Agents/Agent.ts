@@ -161,7 +161,7 @@ export class Agent {
     return toolsArray;
   }
 
-  async run_completions(
+  private async run_completions(
     input: string | AgentRequest<ChatCompletionMessageParam>
   ): Promise<{
     status: string;
@@ -320,7 +320,7 @@ export class Agent {
     });
   }
 
-  async run_responses(
+  private async run_responses(
     input: string | AgentRequest<ResponseInputItem>
   ): Promise<{
     status: string;
