@@ -1,7 +1,7 @@
 # TODO List
 
 - [ ] Fix runners crashing with subsequent runs. (Allow more than 1 tracer or mutliple runner traces (each run its own trace))
-- [ ] Validate sub agent flow is proper, maybe sub agents need more context. 
+- [ ] Validate sub agent flow is proper, maybe sub agents need more context. (maybe we have a flow where agents decide what of their output / task was valid or useful context, kind of sounds like something a dev would decide on instead of loom itself? thinking. )
 - [ ] More involved agent examples
 - [ ] Per agent configs (ability to use claude for example for HTML Coding agents while using o3 for reasoning or deepseek for cheaper general agents) 
 - [ ] Find bugs
