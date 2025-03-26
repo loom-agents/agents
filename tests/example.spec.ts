@@ -161,7 +161,7 @@ test("Content Production System combines multiple agents / Runners run agents", 
 });
 
 test("Agents with MCP", async () => {
-  const researchAgent = new Agent({
+  const mcpAgent = new Agent({
     name: "You run one of the mcp tools",
     purpose: "Run an mcp tool!",
     mcp_servers: [
@@ -170,7 +170,7 @@ test("Agents with MCP", async () => {
     ],
   });
 
-  const result = await researchAgent.run(
+  const result = await mcpAgent.run(
     "Run an mcp tool with any required input, make up input"
   );
   console.log(`[MCP] Result:`, result);
