@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    "module": "commonjs",
+    "module": "esnext",
     "rootDir": "./src",
     "outDir": "./dist",
     "esModuleInterop": true,

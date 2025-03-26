@@ -10,9 +10,10 @@ import {
   ResponseOutputMessage,
   Tool,
 } from "openai/resources/responses/responses";
-import { Loom } from "../Loom/Loom";
+import { Loom } from "../Loom/Loom.js";
 import { v4 } from "uuid";
-import { Trace } from "../Trace/Trace";
+import { Trace } from "../Trace/Trace.js";
+import { MCPServerSSE, MCPServerStdio } from "../MCP/MCP.js";
 
 export interface ToolCall {
   name: string;
@@ -39,6 +40,7 @@ export interface AgentConfig {
   purpose: string;
   sub_agents?: Agent[];
   tools?: ToolCall[];
+  mcp_servers?: (MCPServerSSE | MCPServerStdio)[];
   model?: string;
   web_search?: WebSearchConfig;
   timeout_ms?: number;
@@ -89,8 +91,28 @@ export class Agent {
     };
   }
 
-  private prepareTools(): Tool[] {
+  private async prepareTools(): Promise<Tool[]> {
     const toolsArray = [];
+
+    if (this.config.mcp_servers) {
+      for (const mcp of this.config.mcp_servers) {
+        const server_tools = await mcp.getTools();
+        for (const tool of server_tools.tools) {
+          toolsArray.push({
+            type: "function" as const,
+            name: `mcp_${tool.name}`,
+            description: `MCP Tool: ${tool.name}`,
+            parameters: {
+              type: "object",
+              properties: tool.inputSchema.properties,
+              required: tool.inputSchema.required,
+              additionalProperties: false,
+            },
+            strict: true,
+          });
+        }
+      }
+    }
 
     if (this.config.tools && this.config.tools.length > 0) {
       toolsArray.push(
@@ -202,7 +224,7 @@ export class Agent {
         },
         ...context,
       ] as ChatCompletionMessageParam[],
-      tools: this.ToolsToCompletionTools(this.prepareTools()),
+      tools: this.ToolsToCompletionTools(await this.prepareTools()),
       web_search_options: this.config.web_search?.enabled
         ? {
             search_context_size:
@@ -262,7 +284,69 @@ export class Agent {
       const tool_calls = response.choices[0].message.tool_calls;
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
-          if (tool_call.function.name === "CallSubAgent") {
+          if (tool_call.function.name.startsWith("mcp_")) {
+            const mcp_tool_trace = run_trace?.start("mcp_tool_call", {
+              tool_call,
+            });
+
+            const mcp_tool_name = tool_call.function.name.replace("mcp_", "");
+            const mcpResult = await this.config.mcp_servers?.reduce(
+              async (accPromise, server) => {
+                const acc = await accPromise;
+                if (acc.mcp && acc.tool) return acc;
+                const { tools } = await server.getTools();
+                const tool = tools.find(
+                  (tool: any) => tool.name === mcp_tool_name
+                );
+                return tool ? { mcp: server, tool } : acc;
+              },
+              Promise.resolve({
+                mcp: undefined as MCPServerSSE | MCPServerStdio | undefined,
+                tool: undefined,
+              })
+            );
+            const { mcp, tool } = mcpResult || {};
+            if (!mcp || !tool) {
+              call_results.push({
+                role: "tool" as const,
+                tool_call_id: tool_call.id,
+                content: `[MCP Tool Call Error] ${mcp_tool_name} - Tool not found`,
+              });
+              mcp_tool_trace?.end();
+              continue;
+            }
+
+            try {
+              const result = await mcp.callTool({
+                name: mcp_tool_name,
+                arguments: JSON.parse(tool_call.function.arguments),
+              });
+              if (result.isError) {
+                call_results.push({
+                  role: "tool" as const,
+                  tool_call_id: tool_call.id,
+                  content: `[MCP Tool Call Error] ${mcp_tool_name} - ${valueToString(
+                    result.content
+                  )}`,
+                });
+                mcp_tool_trace?.end();
+                continue;
+              }
+              call_results.push({
+                role: "tool" as const,
+                tool_call_id: tool_call.id,
+                content: valueToString(result.content),
+              });
+            } catch (error: Error | any) {
+              call_results.push({
+                role: "tool" as const,
+                tool_call_id: tool_call.id,
+                content: `[MCP Tool Call Error] ${mcp_tool_name} - ${error.message}`,
+              });
+            } finally {
+              mcp_tool_trace?.end();
+            }
+          } else if (tool_call.function.name === "CallSubAgent") {
             const sub_agent_trace = run_trace?.start("call_sub_agent", {
               tool_call,
             });
@@ -387,7 +471,7 @@ export class Agent {
         },
         ...context,
       ] as ResponseInputItem[],
-      tools: this.prepareTools(),
+      tools: await this.prepareTools(),
     });
 
     if (response.status === "completed" && response.output_text) {
@@ -427,7 +511,69 @@ export class Agent {
         response.output as ResponseFunctionToolCall[];
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
-          if (tool_call.name === "CallSubAgent") {
+          if (tool_call.name.startsWith("mcp_")) {
+            const mcp_tool_trace = run_trace?.start("mcp_tool_call", {
+              tool_call,
+            });
+
+            const mcp_tool_name = tool_call.name.replace("mcp_", "");
+            const mcpResult = await this.config.mcp_servers?.reduce(
+              async (accPromise, server) => {
+                const acc = await accPromise;
+                if (acc.mcp && acc.tool) return acc;
+                const { tools } = await server.getTools();
+                const tool = tools.find(
+                  (tool: any) => tool.name === mcp_tool_name
+                );
+                return tool ? { mcp: server, tool } : acc;
+              },
+              Promise.resolve({
+                mcp: undefined as MCPServerSSE | MCPServerStdio | undefined,
+                tool: undefined,
+              })
+            );
+            const { mcp, tool } = mcpResult || {};
+            if (!mcp || !tool) {
+              call_results.push({
+                type: "function_call_output" as const,
+                call_id: tool_call.call_id,
+                output: `[MCP Tool Call Error] ${mcp_tool_name} - Tool not found`,
+              });
+              mcp_tool_trace?.end();
+              continue;
+            }
+
+            try {
+              const result = await mcp.callTool({
+                name: mcp_tool_name,
+                arguments: JSON.parse(tool_call.arguments),
+              });
+              if (result.isError) {
+                call_results.push({
+                  type: "function_call_output" as const,
+                  call_id: tool_call.call_id,
+                  output: `[MCP Tool Call Error] ${mcp_tool_name} - ${valueToString(
+                    result.content
+                  )}`,
+                });
+                mcp_tool_trace?.end();
+                continue;
+              }
+              call_results.push({
+                type: "function_call_output" as const,
+                call_id: tool_call.call_id,
+                output: valueToString(result.content),
+              });
+            } catch (error: Error | any) {
+              call_results.push({
+                type: "function_call_output" as const,
+                call_id: tool_call.call_id,
+                output: `[MCP Tool Call Error] ${mcp_tool_name} - ${error.message}`,
+              });
+            } finally {
+              mcp_tool_trace?.end();
+            }
+          } else if (tool_call.name === "CallSubAgent") {
             const sub_agent_trace = run_trace?.start("call_sub_agent", {
               tool_call,
             });

@@ -5,8 +5,25 @@ export * from "./Agents/Agent";
 export * from "./Loom/Loom";
 export * from "./Runner/Runner";
 export * from "./Trace/Trace";
+export * from "./MCP/MCP";
 ```
 import ... from `loom-agents`;
+
+```MCP/MCP
+export abstract class MCPServerBase {
+  constructor(transport: SSEClientTransport | StdioClientTransport);
+  async getTools();
+  async callTool(params: CallToolRequest["params"]);
+}
+
+export class MCPServerSSE extends MCPServerBase {
+  constructor(url: URL, opts?: SSEClientTransportOptions);
+}
+
+export class MCPServerStdio extends MCPServerBase {
+  constructor(command: string, args: string[]);
+}
+```
 
 ```Agent
 export interface ToolCall {
@@ -35,6 +52,7 @@ export interface AgentConfig {
   sub_agents?: Agent[]; // Sub Agents do push `Context` messages into the hierarchy
   tools?: ToolCall[];
   model?: string;
+  mcp_servers?: (MCPServerSSE | MCPServerStdio)[];
   web_search?: WebSearchConfig;
   timeout_ms?: number;
 }
@@ -321,4 +339,19 @@ async function main() {
 }
 
 main().catch(console.error);
+```
+
+```examples/mcp.ts
+const researchAgent = new Agent({
+  name: "You run one of the mcp tools",
+  purpose: "Run an mcp tool!",
+  mcp_servers: [
+    new MCPServerSSE(new URL("http://localhost:3001/sse")),
+    new MCPServerStdio("bun", [  "stdio.ts" ]),
+  ],
+});
+
+const result = await researchAgent.run(
+  "Run an mcp tool with any required input, make up input"
+);
 ```

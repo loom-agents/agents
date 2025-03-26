@@ -1,6 +1,6 @@
 {
   "name": "loom-agents",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "scripts": {
     "barrel": "bunx barrelsby --delete -r --directory ./src --noHeader",
     "build": "bun run barrel && tsc",
@@ -18,10 +18,11 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.8.0",
     "openai": "^4.89.0",
     "uuid": "^11.1.0"
   },
-  "type": "commonjs",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

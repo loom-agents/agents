@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { Agent, Runner } from "../";
+import { Agent, MCPServerSSE, MCPServerStdio, Runner } from "loom-agents";
 
 test("Simple Agent responds with a simple message", async () => {
   const simpleAgent = new Agent({
@@ -158,4 +158,23 @@ test("Content Production System combines multiple agents / Runners run agents", 
 
   console.log(`[CONTENT PRODUCTION] Result:`, result);
   expect(JSON.stringify(result).toLocaleLowerCase()).toContain("renewable");
+});
+
+test("Agents with MCP", async () => {
+  const researchAgent = new Agent({
+    name: "You run one of the mcp tools",
+    purpose: "Run an mcp tool!",
+    mcp_servers: [
+      new MCPServerSSE(new URL("http://localhost:3001/sse")),
+      new MCPServerStdio("bun", ["stdio.ts"]),
+    ],
+  });
+
+  const result = await researchAgent.run(
+    "Run an mcp tool with any required input, make up input"
+  );
+  console.log(`[MCP] Result:`, result);
+  expect(JSON.stringify(result).toLocaleLowerCase()).toContain(
+    "function_call_output"
+  );
 });

@@ -1,6 +1,6 @@
 import { ResponseInputItem } from "openai/resources/responses/responses";
-import { Agent, AgentRequest, AgentResponse } from "../Agents/Agent";
-import { Trace } from "../Trace/Trace";
+import { Agent, AgentRequest, AgentResponse } from "../Agents/Agent.js";
+import { Trace } from "../Trace/Trace.js";
 import { v4 as uuidv4 } from "uuid";
 import { ChatCompletionMessageParam } from "openai/resources/chat";
 
