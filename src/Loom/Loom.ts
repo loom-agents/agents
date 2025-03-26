@@ -1,45 +1,41 @@
+import OpenAI, { ClientOptions } from "openai";
+
 export interface ConfigOptions {
   api?: "completions" | "responses";
+  openai_config?: ClientOptions;
 }
 
-export class LoomConfig {
-  private static instance: LoomConfig;
-  private config: ConfigOptions = {};
+const config: ConfigOptions = {
+  api: "responses",
+  openai_config: {},
+};
 
-  private constructor(
-    initialConfig: ConfigOptions = {
-      api: "responses",
+let openaiInstance = new OpenAI(config.openai_config);
+
+export const Loom = {
+  get api(): ConfigOptions["api"] {
+    return config.api;
+  },
+  set api(value: ConfigOptions["api"]) {
+    config.api = value;
+  },
+  get openai_config(): ConfigOptions["openai_config"] {
+    return config.openai_config;
+  },
+  set openai_config(value: ConfigOptions["openai_config"]) {
+    config.openai_config = value;
+    openaiInstance = new OpenAI(value);
+  },
+  update(newConfig: ConfigOptions): void {
+    Object.assign(config, newConfig);
+    if (newConfig.openai_config) {
+      openaiInstance = new OpenAI(newConfig.openai_config);
     }
-  ) {
-    if (initialConfig) {
-      this.config = initialConfig;
-    }
-  }
-
-  public static getInstance(initialConfig?: ConfigOptions): LoomConfig {
-    if (!LoomConfig.instance) {
-      LoomConfig.instance = new LoomConfig(initialConfig);
-    }
-
-    if (initialConfig) {
-      LoomConfig.instance.update(initialConfig);
-    }
-    return LoomConfig.instance;
-  }
-
-  public get(key: keyof ConfigOptions): any {
-    return this.config[key];
-  }
-
-  public set(key: keyof ConfigOptions, value: any): void {
-    this.config[key] = value;
-  }
-
-  public update(newConfig: ConfigOptions): void {
-    this.config = { ...this.config, ...newConfig };
-  }
-
-  public getAll(): ConfigOptions {
-    return { ...this.config };
-  }
-}
+  },
+  getAll(): ConfigOptions {
+    return { ...config };
+  },
+  get openai() {
+    return openaiInstance;
+  },
+};

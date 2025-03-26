@@ -1,8 +1,9 @@
 {
   "name": "loom-agents",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "scripts": {
-    "build": "tsc",
+    "barrel": "npx barrelsby --delete -r --directory ./src --noHeader",
+    "build": "npm run barrel && tsc",
     "start": "node dist/index.js",
     "prepublishOnly": "npm run build",
     "test": "playwright test"

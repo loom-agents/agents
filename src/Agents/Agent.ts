@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -11,9 +10,7 @@ import {
   ResponseOutputMessage,
   Tool,
 } from "openai/resources/responses/responses";
-import { LoomConfig } from "../Loom/Loom";
-
-const openai = new OpenAI();
+import { Loom } from "../Loom/Loom";
 
 export interface ToolCall {
   name: string;
@@ -176,7 +173,7 @@ export class Agent {
         ? [{ content: input, role: "user" }]
         : input.context;
 
-    const response = await openai.chat.completions.create({
+    const response = await Loom.openai.chat.completions.create({
       model: this.config.model as string,
       messages: [
         {
@@ -214,9 +211,7 @@ export class Agent {
     if (response.choices[0].finish_reason === "stop") {
       return {
         status: "completed",
-        final_message:
-          response.choices[0].message.content ||
-          "[Unknown] Something went wrong",
+        final_message: response.choices[0].message.content as string,
         context: context,
       };
     }
@@ -337,7 +332,7 @@ export class Agent {
         ? [{ content: input, role: "user" }]
         : input.context;
 
-    const response = await openai.responses.create({
+    const response = await Loom.openai.responses.create({
       model: this.config.model as string,
       input: [
         {
@@ -469,8 +464,7 @@ export class Agent {
     final_message: string;
     context: ChatCompletionMessageParam[] | ResponseInputItem[];
   }> {
-    if (LoomConfig.getInstance().get("api") === "responses")
-      return this.run_responses(input as any);
+    if (Loom.api === "responses") return this.run_responses(input as any);
 
     return this.run_completions(input as any) as any;
   }
