@@ -22,7 +22,7 @@ This project provides a simple yet powerful way to create AI agents that can:
 ## Installation
 
 ```bash
-npm install loom-agents
+$ bun i loom-agents
 ```
 
 ## Quick Start
