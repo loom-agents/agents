@@ -6,7 +6,7 @@
 - [ ] Find bugs
 - [ ] UUID _everything_
 - [ ] Debugging
-- [ ] Improved llms helper
+- [X] Improved llms helper
 - [X] Fix runners crashing with subsequent runs. (Allow more than 1 tracer or mutliple runner traces (each run its own trace))
 - [X] Docs website
 - [X] Refactor / implement a tracing system

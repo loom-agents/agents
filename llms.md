@@ -32,7 +32,7 @@ export interface WebSearchConfig {
 export interface AgentConfig {
   name: string;
   purpose: string;
-  sub_agents?: Agent[];
+  sub_agents?: Agent[]; // Sub Agents do push `Context` messages into the hierarchy
   tools?: ToolCall[];
   model?: string;
   web_search?: WebSearchConfig;
@@ -53,7 +53,7 @@ export class Agent {
   public uuid: string;
   constructor(config: AgentConfig)
   async run(input: string | AgentRequest<ResponseInputItem | ChatCompletionMessageParam>, trace?: Trace ): Promise<AgentResponse<ResponseInputItem | ChatCompletionMessageParam>>
-  public asTool(parameters: object): ToolCall;
+  public asTool(parameters: object): ToolCall; // Agents `asTool`s do not push `Context` messages into the hierarchy 
 }
 ```
 
