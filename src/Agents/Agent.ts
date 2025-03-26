@@ -14,6 +14,7 @@ import { Loom } from "../Loom/Loom.js";
 import { v4 } from "uuid";
 import { Trace } from "../Trace/Trace.js";
 import { MCPServerSSE, MCPServerStdio } from "../MCP/MCP.js";
+import OpenAI, { ClientOptions } from "openai";
 
 export interface ToolCall {
   name: string;
@@ -44,6 +45,8 @@ export interface AgentConfig {
   model?: string;
   web_search?: WebSearchConfig;
   timeout_ms?: number;
+  client_config?: ClientOptions;
+  api?: "completions" | "responses";
 }
 
 const valueToString = (value: any): string => {
@@ -77,10 +80,14 @@ export class Agent {
   private config: AgentConfig;
   private defaultModel = "gpt-4o";
   private defaultTimeout = 60000;
+  private _client: OpenAI | undefined;
+  private _api: "completions" | "responses" | undefined;
 
   constructor(config: AgentConfig) {
     if (!config.purpose) throw new Error("Agent purpose is required");
     if (!config.name) throw new Error("Agent name is required");
+    if (config.client_config) this._client = new OpenAI(config.client_config);
+    if (config.api) this._api = config.api;
 
     this.uuid = `agent.${v4()}`;
 
@@ -89,6 +96,11 @@ export class Agent {
       model: config.model || this.defaultModel,
       timeout_ms: config.timeout_ms || this.defaultTimeout,
     };
+  }
+
+  private get client(): OpenAI {
+    if (!this._client) Loom.openai;
+    return this._client as OpenAI;
   }
 
   private async prepareTools(): Promise<Tool[]> {
@@ -203,7 +215,7 @@ export class Agent {
         ? [{ content: input, role: "user" }]
         : input.context;
 
-    const response = await Loom.openai.chat.completions.create({
+    const response = await this.client.chat.completions.create({
       model: this.config.model as string,
       metadata: {
         loom: "powered",
@@ -450,7 +462,7 @@ export class Agent {
         ? [{ content: input, role: "user" }]
         : input.context;
 
-    const response = await Loom.openai.responses.create({
+    const response = await this.client.responses.create({
       model: this.config.model as string,
       metadata: {
         loom: "powered",
@@ -676,7 +688,9 @@ export class Agent {
         ? [{ content: input, role: "user" }]
         : input.context;
 
-    if (Loom.api === "responses")
+    const api = this._api ? this._api : Loom.api;
+
+    if (api === "responses")
       return this.run_responses({ context: content }, trace);
 
     return this.run_completions({ context: content }, trace) as any;

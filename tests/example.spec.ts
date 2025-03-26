@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { Agent, MCPServerSSE, MCPServerStdio, Runner } from "loom-agents";
+import { Agent, Loom, MCPServerSSE, MCPServerStdio, Runner } from "loom-agents";
 
 test("Simple Agent responds with a simple message", async () => {
   const simpleAgent = new Agent({
@@ -177,4 +177,21 @@ test("Agents with MCP", async () => {
   expect(JSON.stringify(result).toLocaleLowerCase()).toContain(
     "function_call_output"
   );
+});
+
+test("Agent specific OpenAI client configs (different model providers)", async () => {
+  const deepseekAgent = new Agent({
+    name: "ModelDeligator",
+    purpose: "Are you deepseek or chatgpt? You tell me!",
+    model: "deepseek-chat",
+    api: "completions",
+    client_config: {
+      baseURL: "https://api.deepseek.com",
+      apiKey: "sk-",
+    },
+  });
+
+  const result = await deepseekAgent.run("What model are you running?");
+  console.log(`[MCP] Result:`, result);
+  expect(JSON.stringify(result).toLocaleLowerCase()).toContain("deepseek");
 });
