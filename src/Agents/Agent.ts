@@ -42,7 +42,6 @@ export interface AgentConfig {
   model?: string;
   web_search?: WebSearchConfig;
   timeout_ms?: number;
-  mode?: "responses" | "completions";
 }
 
 const valueToString = (value: any): string => {
@@ -63,7 +62,6 @@ const valueToString = (value: any): string => {
 
 export interface AgentRequest<T> {
   context: T[];
-  trace?: Trace;
 }
 
 export interface AgentResponse<T> {
@@ -81,7 +79,6 @@ export class Agent {
   constructor(config: AgentConfig) {
     if (!config.purpose) throw new Error("Agent purpose is required");
     if (!config.name) throw new Error("Agent name is required");
-    if (!config.model) config.mode = "completions";
 
     this.uuid = `agent.${v4()}`;
 
@@ -174,11 +171,10 @@ export class Agent {
   }
 
   private async run_completions(
-    input: string | AgentRequest<ChatCompletionMessageParam>
+    input: string | AgentRequest<ChatCompletionMessageParam>,
+    trace?: Trace
   ): Promise<AgentResponse<ChatCompletionMessageParam>> {
-    const run_trace: Trace | undefined = (<
-      AgentRequest<ChatCompletionMessageParam>
-    >input)?.trace?.start("run_completions", {});
+    const run_trace: Trace | undefined = trace?.start("run_completions", {});
 
     const context: ChatCompletionMessageParam[] =
       typeof input === "string"
@@ -285,16 +281,18 @@ export class Agent {
               continue;
             }
 
-            const result = await sub_agent.run({
-              context: [
-                ...context,
-                {
-                  role: "user",
-                  content: args.request,
-                },
-              ],
-              trace: sub_agent_trace,
-            });
+            const result = await sub_agent.run(
+              {
+                context: [
+                  ...context,
+                  {
+                    role: "user",
+                    content: args.request,
+                  },
+                ],
+              },
+              sub_agent_trace
+            );
 
             call_results.push({
               role: "tool" as const,
@@ -343,24 +341,25 @@ export class Agent {
       }
     }
 
-    return this.run_completions({
-      context: [
-        ...context,
-        ...response.choices.map((choice) => choice.message),
-        ...call_results,
-      ],
-      trace: run_trace,
-    }).finally(() => {
+    return this.run_completions(
+      {
+        context: [
+          ...context,
+          ...response.choices.map((choice) => choice.message),
+          ...call_results,
+        ],
+      },
+      run_trace
+    ).finally(() => {
       run_trace?.end();
     });
   }
 
   private async run_responses(
-    input: string | AgentRequest<ResponseInputItem>
+    input: string | AgentRequest<ResponseInputItem>,
+    trace?: Trace
   ): Promise<AgentResponse<ResponseInputItem>> {
-    const run_trace: Trace | undefined = (<AgentRequest<ResponseInputItem>>(
-      input
-    ))?.trace?.start("run_responses", {});
+    const run_trace: Trace | undefined = trace?.start("run_responses", {});
 
     const context: ResponseInputItem[] =
       typeof input === "string"
@@ -449,16 +448,18 @@ export class Agent {
               continue;
             }
 
-            const result = await sub_agent.run_responses({
-              context: [
-                ...context,
-                {
-                  role: "user",
-                  content: args.request,
-                },
-              ],
-              trace: sub_agent_trace,
-            });
+            const result = await sub_agent.run_responses(
+              {
+                context: [
+                  ...context,
+                  {
+                    role: "user",
+                    content: args.request,
+                  },
+                ],
+              },
+              sub_agent_trace
+            );
 
             call_results.push({
               type: "function_call_output",
@@ -508,10 +509,12 @@ export class Agent {
       }
     }
 
-    return this.run_responses({
-      context: [...context, ...response.output, ...call_results],
-      trace: run_trace,
-    }).finally(() => {
+    return this.run_responses(
+      {
+        context: [...context, ...response.output, ...call_results],
+      },
+      run_trace
+    ).finally(() => {
       run_trace?.end();
     });
   }
@@ -528,8 +531,8 @@ export class Agent {
         : input.context;
 
     if (Loom.api === "responses")
-      return this.run_responses({ context: content, trace });
+      return this.run_responses({ context: content }, trace);
 
-    return this.run_completions({ context: content, trace }) as any;
+    return this.run_completions({ context: content }, trace) as any;
   }
 }

@@ -44,6 +44,7 @@ export class Runner {
     const agent_trace = new Trace("run", {
       agent: this.agent.uuid,
     });
+
     this.traces.push(agent_trace);
 
     let depth = 0;
@@ -58,10 +59,12 @@ export class Runner {
         return { ...result, trace: agent_trace };
       }
 
-      result = await this.agent.run({
-        context: result.context,
-        trace: agent_trace,
-      });
+      result = await this.agent.run(
+        {
+          context: result.context,
+        },
+        agent_trace
+      );
     } while (depth < maxMaxDepth && result.status !== "completed");
 
     agent_trace.end();

@@ -11,6 +11,8 @@ export interface TraceDetails {
 
 export class Trace {
   private details: TraceDetails;
+
+  private children: Trace[] = [];
   private parent?: Trace;
 
   constructor(name: string, data: any, parent?: Trace) {
@@ -26,7 +28,7 @@ export class Trace {
 
   public start(name: string, data: any): Trace {
     const subTrace = new Trace(name, data, this);
-    this.details.children.push(subTrace.getDetails());
+    this.children.push(subTrace);
     return subTrace;
   }
 
@@ -36,39 +38,34 @@ export class Trace {
   }
 
   public getDetails(): TraceDetails {
-    return this.details;
-  }
-}
-
-function renderTrace(
-  details: TraceDetails | undefined,
-  indent: string = "",
-  last: boolean = true
-): string {
-  if (!details) {
-    return "{}";
+    return {
+      ...this.details,
+      children: this.children.map((child) => child.getDetails()),
+    };
   }
 
-  const connector = indent ? (last ? "└─ " : "├─ ") : "";
-  let line = `${indent}${connector}[${details.uuid}] ${details.name}`;
+  public render(indent: string = "", last: boolean = true): string {
+    const details = this.getDetails();
+    const connector = indent ? (last ? "└─ " : "├─ ") : "";
+    let line = `${indent}${connector}[${details.uuid}] ${details.name}`;
 
-  if (typeof details.endTime === "number") {
-    const duration = details.endTime - details.startTime;
-    line += ` (${duration} ms)`;
+    if (typeof details.endTime === "number") {
+      const duration = details.endTime - details.startTime;
+      line += ` (${duration} ms)`;
+    }
+
+    if (details.data) {
+      line += ` - ${JSON.stringify(details.data)}`;
+    }
+
+    let output = line + "\n";
+    const newIndent = indent + (last ? "    " : "│   ");
+
+    this.children.forEach((child, index) => {
+      const childIsLast = index === this.children.length - 1;
+      output += child.render(newIndent, childIsLast);
+    });
+
+    return output;
   }
-
-  if (details.data) {
-    line += ` - ${JSON.stringify(details.data)}`;
-  }
-
-  let output = line + "\n";
-
-  const newIndent = indent + (last ? "    " : "│   ");
-
-  details.children.forEach((child, index) => {
-    const childIsLast = index === details.children.length - 1;
-    output += renderTrace(child, newIndent, childIsLast);
-  });
-
-  return output;
 }
