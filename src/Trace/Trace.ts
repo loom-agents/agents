@@ -41,10 +41,14 @@ export class Trace {
 }
 
 function renderTrace(
-  details: TraceDetails,
+  details: TraceDetails | undefined,
   indent: string = "",
   last: boolean = true
 ): string {
+  if (!details) {
+    return "{}";
+  }
+
   const connector = indent ? (last ? "└─ " : "├─ ") : "";
   let line = `${indent}${connector}[${details.uuid}] ${details.name}`;
 
@@ -67,30 +71,4 @@ function renderTrace(
   });
 
   return output;
-}
-
-export class Tracer {
-  private uuid: string;
-  private trace?: Trace;
-  constructor() {
-    this.uuid = `tracer.${v4()}`;
-  }
-  public start(name: string, data: any): Trace {
-    if (this.trace) {
-      throw new Error("Trace already started");
-    }
-    this.trace = new Trace(name, data);
-    return this.trace;
-  }
-
-  public getTrace(): Trace {
-    if (!this.trace) {
-      throw new Error("Trace not started");
-    }
-    return this.trace;
-  }
-
-  public render(): string {
-    return renderTrace(this.getTrace().getDetails());
-  }
 }

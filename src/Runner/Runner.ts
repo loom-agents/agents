@@ -1,6 +1,6 @@
 import { ResponseInputItem } from "openai/resources/responses/responses";
-import { Agent, AgentRequest } from "../Agents/Agent";
-import { Tracer } from "../Trace/Trace";
+import { Agent, AgentRequest, AgentResponse } from "../Agents/Agent";
+import { Trace } from "../Trace/Trace";
 import { v4 as uuidv4 } from "uuid";
 import { ChatCompletionMessageParam } from "openai/resources/chat";
 
@@ -11,11 +11,14 @@ export interface RunnerConfig {
   context?: Record<string, any>;
 }
 
+export interface RunnerResponse<T> extends AgentResponse<T> {
+  trace: Trace;
+}
+
 export class Runner {
-  private tracer: Tracer = new Tracer();
+  private traces: Trace[] = [];
   private config: RunnerConfig;
   private agent: Agent;
-  private messages: ResponseInputItem[] = [];
 
   constructor(agent: Agent, config: RunnerConfig = {}) {
     if (!agent) {
@@ -37,25 +40,22 @@ export class Runner {
       | string
       | AgentRequest<ResponseInputItem>
       | AgentRequest<ChatCompletionMessageParam>
-  ): Promise<any> {
-    const agent_trace = this.tracer.start("run", {
+  ): Promise<RunnerResponse<ResponseInputItem | ChatCompletionMessageParam>> {
+    const agent_trace = new Trace("run", {
       agent: this.agent.uuid,
     });
+    this.traces.push(agent_trace);
 
     let depth = 0;
     const maxMaxDepth = this.config.max_depth || 10;
 
-    let result: {
-      status: string;
-      final_message: string;
-      context: ChatCompletionMessageParam[] | ResponseInputItem[];
-    } = await this.agent.run(input, agent_trace);
-
+    let result: AgentResponse<ResponseInputItem | ChatCompletionMessageParam> =
+      await this.agent.run(input, agent_trace);
     do {
       depth += 1;
       if (result.status === "completed") {
         agent_trace.end();
-        return result;
+        return { ...result, trace: agent_trace };
       }
 
       result = await this.agent.run({
@@ -65,14 +65,14 @@ export class Runner {
     } while (depth < maxMaxDepth && result.status !== "completed");
 
     agent_trace.end();
-    return result;
+    return { ...result, trace: agent_trace };
   }
 
-  public GetMessages(): ResponseInputItem[] {
-    return this.messages;
+  public getLastTrace(): Trace {
+    return this.traces[this.traces.length - 1];
   }
 
-  public GetTracer(): Tracer {
-    return this.tracer;
+  public getTraces(): Trace[] {
+    return this.traces;
   }
 }

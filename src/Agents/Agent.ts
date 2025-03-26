@@ -66,6 +66,12 @@ export interface AgentRequest<T> {
   trace?: Trace;
 }
 
+export interface AgentResponse<T> {
+  status: string;
+  final_message: string;
+  context: T[];
+}
+
 export class Agent {
   public uuid: string;
   private config: AgentConfig;
@@ -169,11 +175,7 @@ export class Agent {
 
   private async run_completions(
     input: string | AgentRequest<ChatCompletionMessageParam>
-  ): Promise<{
-    status: string;
-    final_message: string;
-    context: ChatCompletionMessageParam[];
-  }> {
+  ): Promise<AgentResponse<ChatCompletionMessageParam>> {
     const run_trace: Trace | undefined = (<
       AgentRequest<ChatCompletionMessageParam>
     >input)?.trace?.start("run_completions", {});
@@ -355,11 +357,7 @@ export class Agent {
 
   private async run_responses(
     input: string | AgentRequest<ResponseInputItem>
-  ): Promise<{
-    status: string;
-    final_message: string;
-    context: ResponseInputItem[];
-  }> {
+  ): Promise<AgentResponse<ResponseInputItem>> {
     const run_trace: Trace | undefined = (<AgentRequest<ResponseInputItem>>(
       input
     ))?.trace?.start("run_responses", {});
@@ -523,11 +521,7 @@ export class Agent {
       | string
       | AgentRequest<ResponseInputItem | ChatCompletionMessageParam>,
     trace?: Trace
-  ): Promise<{
-    status: string;
-    final_message: string;
-    context: ChatCompletionMessageParam[] | ResponseInputItem[];
-  }> {
+  ): Promise<AgentResponse<ResponseInputItem | ChatCompletionMessageParam>> {
     const content: any =
       typeof input === "string"
         ? [{ content: input, role: "user" }]
