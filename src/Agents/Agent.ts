@@ -519,7 +519,7 @@ export class Agent {
     });
   }
 
-  async run(
+  public async run(
     input:
       | string
       | AgentRequest<ResponseInputItem | ChatCompletionMessageParam>,
@@ -534,5 +534,30 @@ export class Agent {
       return this.run_responses({ context: content }, trace);
 
     return this.run_completions({ context: content }, trace) as any;
+  }
+
+  public asTool(parameters?: object): ToolCall {
+    return {
+      name: this.config.name.replace(/[^a-zA-Z0-9_-]/g, ""),
+      parameters: parameters
+        ? parameters
+        : {
+            request: {
+              type: "string",
+              description: `Request to send to the ${this.config.name.replace(
+                /[^a-zA-Z0-9_-]/g,
+                ""
+              )} agent`,
+            },
+          },
+      callback: async (...args) => {
+        return await this.run(
+          `You were invoked as a tool with the following request - ${JSON.stringify(
+            args
+          )}`
+        );
+      },
+      description: this.config.purpose,
+    };
   }
 }

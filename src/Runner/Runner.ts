@@ -35,7 +35,7 @@ export class Runner {
     this.agent = agent;
   }
 
-  async run(
+  public async run(
     input:
       | string
       | AgentRequest<ResponseInputItem>
