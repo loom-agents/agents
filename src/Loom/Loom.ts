@@ -26,13 +26,7 @@ export const Loom = {
     config.openai_config = value;
     openaiInstance = new OpenAI(value);
   },
-  update(newConfig: ConfigOptions): void {
-    Object.assign(config, newConfig);
-    if (newConfig.openai_config) {
-      openaiInstance = new OpenAI(newConfig.openai_config);
-    }
-  },
-  getAll(): ConfigOptions {
+  get config(): ConfigOptions {
     return { ...config };
   },
   get openai() {
