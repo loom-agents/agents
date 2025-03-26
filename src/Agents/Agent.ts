@@ -175,6 +175,10 @@ export class Agent {
 
     const response = await Loom.openai.chat.completions.create({
       model: this.config.model as string,
+      metadata: {
+        loom: "powered",
+        agent: this.config.name,
+      },
       messages: [
         {
           role: "system",
@@ -334,6 +338,10 @@ export class Agent {
 
     const response = await Loom.openai.responses.create({
       model: this.config.model as string,
+      metadata: {
+        loom: "powered",
+        agent: this.config.name,
+      },
       input: [
         {
           role: "system",
