@@ -1,6 +1,6 @@
 import { ResponseInputItem } from "openai/resources/responses/responses";
 import { Agent, AgentRequest } from "../Agents/Agent";
-import { Tracing } from "../Tracing/Tracing";
+import { Tracer } from "../Trace/Trace";
 import { v4 as uuidv4 } from "uuid";
 import { ChatCompletionMessageParam } from "openai/resources/chat";
 
@@ -12,7 +12,7 @@ export interface RunnerConfig {
 }
 
 export class Runner {
-  private trace: Tracing;
+  private tracer: Tracer = new Tracer();
   private config: RunnerConfig;
   private agent: Agent;
   private messages: ResponseInputItem[] = [];
@@ -29,14 +29,6 @@ export class Runner {
       context: config.context || {},
     };
 
-    this.trace = new Tracing({
-      context: {
-        runner_id: this.config.id,
-        runner_name: this.config.name,
-        ...this.config.context,
-      },
-    });
-
     this.agent = agent;
   }
 
@@ -46,6 +38,10 @@ export class Runner {
       | AgentRequest<ResponseInputItem>
       | AgentRequest<ChatCompletionMessageParam>
   ): Promise<any> {
+    const agent_trace = this.tracer.start("run", {
+      agent: this.agent.uuid,
+    });
+
     let depth = 0;
     const maxMaxDepth = this.config.max_depth || 10;
 
@@ -53,17 +49,22 @@ export class Runner {
       status: string;
       final_message: string;
       context: ChatCompletionMessageParam[] | ResponseInputItem[];
-    } = await this.agent.run(input);
+    } = await this.agent.run(input, agent_trace);
 
     do {
       depth += 1;
       if (result.status === "completed") {
+        agent_trace.end();
         return result;
       }
 
-      result = await this.agent.run({ context: result.context });
+      result = await this.agent.run({
+        context: result.context,
+        trace: agent_trace,
+      });
     } while (depth < maxMaxDepth && result.status !== "completed");
 
+    agent_trace.end();
     return result;
   }
 
@@ -71,15 +72,7 @@ export class Runner {
     return this.messages;
   }
 
-  public GetTrace(): Tracing {
-    return this.trace;
-  }
-
-  public GetHierarchicalTrace(): Record<string, any> {
-    return this.trace.GetHierarchicalTrace();
-  }
-
-  public ExportTrace(): Record<string, any> {
-    return this.trace.ExportForVisualization();
+  public GetTracer(): Tracer {
+    return this.tracer;
   }
 }

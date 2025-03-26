@@ -11,6 +11,8 @@ import {
   Tool,
 } from "openai/resources/responses/responses";
 import { Loom } from "../Loom/Loom";
+import { v4 } from "uuid";
+import { Trace } from "../Trace/Trace";
 
 export interface ToolCall {
   name: string;
@@ -61,9 +63,11 @@ const valueToString = (value: any): string => {
 
 export interface AgentRequest<T> {
   context: T[];
+  trace?: Trace;
 }
 
 export class Agent {
+  public uuid: string;
   private config: AgentConfig;
   private defaultModel = "gpt-4o";
   private defaultTimeout = 60000;
@@ -72,6 +76,8 @@ export class Agent {
     if (!config.purpose) throw new Error("Agent purpose is required");
     if (!config.name) throw new Error("Agent name is required");
     if (!config.model) config.mode = "completions";
+
+    this.uuid = `agent.${v4()}`;
 
     this.config = {
       ...config,
@@ -168,6 +174,10 @@ export class Agent {
     final_message: string;
     context: ChatCompletionMessageParam[];
   }> {
+    const run_trace: Trace | undefined = (<
+      AgentRequest<ChatCompletionMessageParam>
+    >input)?.trace?.start("run_completions", {});
+
     const context: ChatCompletionMessageParam[] =
       typeof input === "string"
         ? [{ content: input, role: "user" }]
@@ -213,6 +223,7 @@ export class Agent {
     });
 
     if (response.choices[0].finish_reason === "stop") {
+      run_trace?.end();
       return {
         status: "completed",
         final_message: response.choices[0].message.content as string,
@@ -221,6 +232,7 @@ export class Agent {
     }
 
     if (response.choices[0].finish_reason === "content_filter") {
+      run_trace?.end();
       return {
         status: "error",
         final_message:
@@ -230,6 +242,7 @@ export class Agent {
     }
 
     if (response.choices[0].finish_reason === "length") {
+      run_trace?.end();
       return {
         status: "error",
         final_message: "[Length] " + response.choices[0].message.content,
@@ -238,6 +251,7 @@ export class Agent {
     }
 
     if (response.choices[0].finish_reason === "function_call") {
+      run_trace?.end();
       return {
         status: "error",
         final_message: "[Function Call] Not implemented",
@@ -251,6 +265,9 @@ export class Agent {
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
           if (tool_call.function.name === "CallSubAgent") {
+            const sub_agent_trace = run_trace?.start("call_sub_agent", {
+              tool_call,
+            });
             const args = JSON.parse(tool_call.function.arguments);
             const sub_agent = this.config.sub_agents?.find(
               (agent) => agent.config.name === args.sub_agent
@@ -262,6 +279,7 @@ export class Agent {
                 tool_call_id: tool_call.id,
                 content: `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found`,
               });
+              sub_agent_trace?.end();
               continue;
             }
 
@@ -273,6 +291,7 @@ export class Agent {
                   content: args.request,
                 },
               ],
+              trace: sub_agent_trace,
             });
 
             call_results.push({
@@ -280,7 +299,11 @@ export class Agent {
               tool_call_id: tool_call.id,
               content: result.final_message,
             });
+            sub_agent_trace?.end();
           } else {
+            const tool_call_trace = run_trace?.start("tool_call", {
+              tool_call,
+            });
             const tool = this.config.tools?.find(
               (tool) => tool.name === tool_call.function.name
             );
@@ -291,6 +314,7 @@ export class Agent {
                 tool_call_id: tool_call.id,
                 content: `[Tool Call Error] ${tool_call.function.name} - Tool not found`,
               });
+              tool_call_trace?.end();
               continue;
             }
 
@@ -309,6 +333,8 @@ export class Agent {
                 tool_call_id: tool_call.id,
                 content: `[Tool Call Error] ${tool_call.function.name} - ${error.message}`,
               });
+            } finally {
+              tool_call_trace?.end();
             }
           }
         }
@@ -321,6 +347,9 @@ export class Agent {
         ...response.choices.map((choice) => choice.message),
         ...call_results,
       ],
+      trace: run_trace,
+    }).finally(() => {
+      run_trace?.end();
     });
   }
 
@@ -331,6 +360,10 @@ export class Agent {
     final_message: string;
     context: ResponseInputItem[];
   }> {
+    const run_trace: Trace | undefined = (<AgentRequest<ResponseInputItem>>(
+      input
+    ))?.trace?.start("run_responses", {});
+
     const context: ResponseInputItem[] =
       typeof input === "string"
         ? [{ content: input, role: "user" }]
@@ -361,6 +394,7 @@ export class Agent {
     });
 
     if (response.status === "completed" && response.output_text) {
+      run_trace?.end();
       return {
         status: "completed",
         final_message: response.output_text || "[Unknown] Something went wrong",
@@ -369,6 +403,7 @@ export class Agent {
     }
 
     if (response.status === "failed") {
+      run_trace?.end();
       return {
         status: "error",
         final_message: `[Failed]  ${
@@ -379,6 +414,7 @@ export class Agent {
     }
 
     if (response.status === "incomplete") {
+      run_trace?.end();
       return {
         status: "error",
         final_message: `[Incomplete]  ${
@@ -395,6 +431,10 @@ export class Agent {
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
           if (tool_call.name === "CallSubAgent") {
+            const sub_agent_trace = run_trace?.start("call_sub_agent", {
+              tool_call,
+            });
+
             const args = JSON.parse(tool_call.arguments);
             const sub_agent = this.config.sub_agents?.find(
               (agent) => agent.config.name === args.sub_agent
@@ -407,6 +447,7 @@ export class Agent {
                 output:
                   `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found` as string,
               });
+              sub_agent_trace?.end();
               continue;
             }
 
@@ -418,6 +459,7 @@ export class Agent {
                   content: args.request,
                 },
               ],
+              trace: sub_agent_trace,
             });
 
             call_results.push({
@@ -425,7 +467,12 @@ export class Agent {
               call_id: tool_call.call_id,
               output: result.final_message,
             });
+            sub_agent_trace?.end();
           } else {
+            const tool_call_trace = run_trace?.start("tool_call", {
+              tool_call,
+            });
+
             const tool = this.config.tools?.find(
               (tool) => tool.name === tool_call.name
             );
@@ -436,6 +483,7 @@ export class Agent {
                 call_id: tool_call.call_id,
                 output: `[Tool Call Error] ${tool_call.name} - Tool not found`,
               });
+              tool_call_trace?.end();
               continue;
             }
 
@@ -454,6 +502,8 @@ export class Agent {
                 call_id: tool_call.call_id,
                 output: `[Tool Call Error] ${tool_call.name} - ${error.message}`,
               });
+            } finally {
+              tool_call_trace?.end();
             }
           }
         }
@@ -462,18 +512,30 @@ export class Agent {
 
     return this.run_responses({
       context: [...context, ...response.output, ...call_results],
+      trace: run_trace,
+    }).finally(() => {
+      run_trace?.end();
     });
   }
 
   async run(
-    input: string | AgentRequest<ResponseInputItem | ChatCompletionMessageParam>
+    input:
+      | string
+      | AgentRequest<ResponseInputItem | ChatCompletionMessageParam>,
+    trace?: Trace
   ): Promise<{
     status: string;
     final_message: string;
     context: ChatCompletionMessageParam[] | ResponseInputItem[];
   }> {
-    if (Loom.api === "responses") return this.run_responses(input as any);
+    const content: any =
+      typeof input === "string"
+        ? [{ content: input, role: "user" }]
+        : input.context;
 
-    return this.run_completions(input as any) as any;
+    if (Loom.api === "responses")
+      return this.run_responses({ context: content, trace });
+
+    return this.run_completions({ context: content, trace }) as any;
   }
 }
