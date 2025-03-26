@@ -18,6 +18,7 @@ This project provides a simple yet powerful way to create AI agents that can:
 - **Web Search**: Enable agents to perform web searches for real-time information
 - **Automatic Recursion Management**: Built-in protection against infinite loops
 - **Multi-Turn Agency**: Agents can plan, ask for clarification, and then execute. 
+- **MCP**: Agents can leverage third party integrations through the [Model Context Protocol](https://modelcontextprotocol.io/introduction)
 
 ## Installation
 
