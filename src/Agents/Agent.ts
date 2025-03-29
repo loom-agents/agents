@@ -99,7 +99,7 @@ export class Agent {
   }
 
   private get client(): OpenAI {
-    if (!this._client) Loom.openai;
+    if (!this._client) return Loom.openai;
     return this._client as OpenAI;
   }
 
