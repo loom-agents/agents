@@ -217,10 +217,11 @@ export class Agent {
 
     const response = await this.client.chat.completions.create({
       model: this.config.model as string,
-      metadata: {
-        loom: "powered",
-        agent: this.config.name,
-      },
+      // metadata: {
+      //   loom: "powered",
+      //   agent: this.config.name,
+      // },
+      // store: true, // meta data isn't enabled unless you store responses, so.. TODO: Completion mode add `store` config variable
       messages: [
         {
           role: "system",
