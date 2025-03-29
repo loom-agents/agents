@@ -52,6 +52,8 @@ export class Runner {
 
     let result: AgentResponse<ResponseInputItem | ChatCompletionMessageParam> =
       await this.agent.run(input, agent_trace);
+
+    // probably legacy code, meant to catch tool_calls that didn't get wrapped in the recurse in agent.run TODO: debug
     do {
       depth += 1;
       if (result.status === "completed") {

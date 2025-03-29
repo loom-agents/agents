@@ -259,7 +259,10 @@ export class Agent {
       return {
         status: "completed",
         final_message: response.choices[0].message.content as string,
-        context: context,
+        context: [
+          ...context,
+          ...response.choices.map((choice) => choice.message),
+        ],
       };
     }
 
@@ -269,7 +272,10 @@ export class Agent {
         status: "error",
         final_message:
           "[Content Filter] " + response.choices[0].message.content,
-        context: context,
+        context: [
+          ...context,
+          ...response.choices.map((choice) => choice.message),
+        ],
       };
     }
 
@@ -278,7 +284,10 @@ export class Agent {
       return {
         status: "error",
         final_message: "[Length] " + response.choices[0].message.content,
-        context: context,
+        context: [
+          ...context,
+          ...response.choices.map((choice) => choice.message),
+        ],
       };
     }
 
@@ -287,7 +296,10 @@ export class Agent {
       return {
         status: "error",
         final_message: "[Function Call] Not implemented",
-        context: context,
+        context: [
+          ...context,
+          ...response.choices.map((choice) => choice.message),
+        ],
       };
     }
 
@@ -491,7 +503,7 @@ export class Agent {
       return {
         status: "completed",
         final_message: response.output_text || "[Unknown] Something went wrong",
-        context: context,
+        context: [...context, ...response.output],
       };
     }
 
@@ -502,7 +514,7 @@ export class Agent {
         final_message: `[Failed]  ${
           (response.output[0] as ResponseOutputMessage).content
         } ${response.error?.message}`,
-        context: context,
+        context: [...context, ...response.output],
       };
     }
 
@@ -513,7 +525,7 @@ export class Agent {
         final_message: `[Incomplete]  ${
           (response.output[0] as ResponseOutputMessage).content
         } ${response.incomplete_details?.reason}`,
-        context: context,
+        context: [...context, ...response.output],
       };
     }
 
