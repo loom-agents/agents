@@ -33,5 +33,22 @@
       "require": "./dist/index.js",
       "default": "./dist/index.js"
     }
-  }
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "agent framework",
+    "agent architecture",
+    "hierarchical agents",
+    "task orchestration",
+    "goal-driven",
+    "ai planner",
+    "typescript",
+    "nodejs",
+    "workflow",
+    "reasoning",
+    "automation",
+    "lightweight"
+  ]
 }
