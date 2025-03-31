@@ -197,3 +197,86 @@ test("Agent specific OpenAI client configs (different model providers)", async (
   console.log(`Deepseek Result:`, result);
   expect(JSON.stringify(result).toLocaleLowerCase()).toContain("deepseek");
 });
+
+test("Cross-agent tool call validation with Calculator", async () => {
+  // Tool definition
+  const calculatorTool: any = {
+    name: "calculate",
+    description: "Evaluates basic math expressions like '4 + 7 * 2'",
+    parameters: {
+      expression: {
+        type: "string",
+        description: "Math expression to evaluate",
+      },
+    },
+    callback: ({ expression }: { expression: string }) => {
+      try {
+        // Simple safe eval using Function (you might want math.js in prod)
+        const result = Function(`"use strict"; return (${expression})`)();
+        return result.toString();
+      } catch (err: any) {
+        return `Error: ${err.message}`;
+      }
+    },
+  };
+
+  const chatGPTValidator = new Agent({
+    name: "ChatGPT Validator",
+    purpose: "Validate the math expression and return the result.",
+    tools: [calculatorTool],
+  });
+
+  const deepseekAgent = new Agent({
+    name: "Deepseek",
+    purpose:
+      "You are Deepseek. You must call the calculator tool to solve math. Ask CHatGPT to make sure youre right. ",
+    model: "deepseek-chat",
+    api: "completions",
+    client_config: {
+      baseURL: "https://api.deepseek.com",
+      apiKey: process.env.DEEKSEEK_API_KEY,
+    },
+    tools: [calculatorTool],
+    sub_agents: [chatGPTValidator],
+  });
+
+  const chatGPTAgent = new Agent({
+    name: "ChatGPT",
+    purpose:
+      "You are ChatGPT. You must call the calculator tool to solve math.",
+    tools: [calculatorTool],
+  });
+
+  const mixerino = new Agent({
+    name: "Mixerino",
+    purpose:
+      "You ask both Deepseek and ChatGPT to calculate 3 * (4 + 2) and validate their answers match.",
+    sub_agents: [deepseekAgent, chatGPTAgent],
+    api: "completions",
+    tools: [
+      {
+        name: "validate_match",
+        description:
+          "Checks if two values are equal and returns a verdict message.",
+        parameters: {
+          a: { type: "string", description: "First result" },
+          b: { type: "string", description: "Second result" },
+        },
+        callback: ({ a, b }: { a: string; b: string }) => {
+          return a === b
+            ? `✅ Match: Both agents returned '${a}'.`
+            : `❌ Mismatch: '${a}' !== '${b}'`;
+        },
+      },
+    ],
+  });
+
+  const result = await mixerino.run(`
+Ask both agents to calculate: 3 * (4 + 2)
+
+Then compare their answers using the validate_match tool.
+`);
+  console.log("Mixerino Result:\n", result.final_message);
+  console.log("Mixerino Context:\n", JSON.stringify(result.context));
+  expect(result.final_message).toContain("✅ Match");
+});
