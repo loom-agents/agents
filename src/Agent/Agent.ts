@@ -258,7 +258,13 @@ export class Agent {
         : undefined,
     });
 
-    if (response.choices[0].finish_reason === "stop") {
+    const hasToolCalls = response.choices.some(
+      (item) =>
+        item.finish_reason === "function_call" ||
+        item.finish_reason === "tool_calls"
+    );
+
+    if (response.choices[0].finish_reason === "stop" && !hasToolCalls) {
       return {
         status: "completed",
         final_message: response.choices[0].message.content as string,
@@ -309,7 +315,7 @@ export class Agent {
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
           if (tool_call.function.name.startsWith("mcp_")) {
-            const mcp_tool_trace = trace?.start("mcp_tool_call", {
+            trace?.start("mcp_tool_call", {
               tool_call,
             });
 
@@ -368,7 +374,7 @@ export class Agent {
             } finally {
             }
           } else if (tool_call.function.name === "CallSubAgent") {
-            const sub_agent_trace = trace?.start("call_sub_agent", {
+            trace?.start("call_sub_agent", {
               tool_call,
             });
             const args = JSON.parse(tool_call.function.arguments);
@@ -404,7 +410,7 @@ export class Agent {
               content: result.final_message,
             });
           } else {
-            const tool_call_trace = trace?.start("tool_call", {
+            trace?.start("tool_call", {
               tool_call,
             });
             const tool = this.config.tools?.find(
@@ -489,11 +495,15 @@ export class Agent {
       tools: await this.prepareTools(),
     });
 
-    if (response.status === "completed" && response.output_text) {
-      console.log(
-        `we think we finished so?`,
-        JSON.stringify(response, null, 2)
-      );
+    const hasToolCalls = response.output.some(
+      (item) => item.type === "function_call"
+    );
+
+    if (
+      response.status === "completed" &&
+      response.output_text &&
+      !hasToolCalls
+    ) {
       return {
         status: "completed",
         final_message: response.output_text || "[Unknown] Something went wrong",
@@ -528,7 +538,7 @@ export class Agent {
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
           if (tool_call.name.startsWith("mcp_")) {
-            const mcp_tool_trace = trace?.start("mcp_tool_call", {
+            trace?.start("mcp_tool_call", {
               tool_call,
             });
 
@@ -587,7 +597,7 @@ export class Agent {
             } finally {
             }
           } else if (tool_call.name === "CallSubAgent") {
-            const sub_agent_trace = trace?.start("call_sub_agent", {
+            trace?.start("call_sub_agent", {
               tool_call,
             });
 
@@ -625,7 +635,7 @@ export class Agent {
               output: result.final_message,
             });
           } else {
-            const tool_call_trace = trace?.start("tool_call", {
+            trace?.start("tool_call", {
               tool_call,
             });
 

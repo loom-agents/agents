@@ -1,6 +1,6 @@
 {
   "name": "loom-agents",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "scripts": {
     "barrel": "bunx barrelsby --delete -r --directory ./src --noHeader",
     "build": "bun run barrel && tsc",
