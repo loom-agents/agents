@@ -1,4 +1,6 @@
 import {
+  ChatCompletionAssistantMessageParam,
+  ChatCompletionContentPartText,
   ChatCompletionMessageParam,
   ChatCompletionMessageToolCall,
   ChatCompletionTool,
@@ -316,10 +318,7 @@ export class Agent {
     input: string | AgentRequest<ChatCompletionMessageParam>,
     trace?: TraceSession
   ): Promise<AgentResponse<ChatCompletionMessageParam>> {
-    const run_trace: TraceNode | undefined = trace?.start(
-      "run_completions",
-      {}
-    );
+    trace?.start("run_completions", {});
 
     const context: ChatCompletionMessageParam[] =
       typeof input === "string"
@@ -457,11 +456,6 @@ export class Agent {
           trace?.start(requestToolCall.traceName, {
             tool_call,
           });
-          console.log(
-            `Completions Tool Call: ${requestToolCall.name} - ${JSON.stringify(
-              requestToolCall.arguments
-            )}`
-          );
 
           try {
             if (requestToolCall.isSubAgent) {
@@ -520,7 +514,7 @@ export class Agent {
     input: string | AgentRequest<ResponseInputItem>,
     trace?: TraceSession
   ): Promise<AgentResponse<ResponseInputItem>> {
-    const run_trace: TraceNode | undefined = trace?.start("run_responses", {});
+    trace?.start("run_responses", {});
 
     const context: ResponseInputItem[] =
       typeof input === "string"
