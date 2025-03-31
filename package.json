@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.8.0",
+    "loom-schema": "^1.0.1",
     "openai": "^4.89.0",
     "uuid": "^11.1.0"
   },
