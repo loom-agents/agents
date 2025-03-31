@@ -1,5 +1,6 @@
 import {
   ChatCompletionMessageParam,
+  ChatCompletionMessageToolCall,
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
 } from "openai/resources/chat";
@@ -8,7 +9,7 @@ import {
   ResponseFunctionToolCall,
   ResponseInputItem,
   ResponseOutputMessage,
-  Tool,
+  Tool as OAITool,
 } from "openai/resources/responses/responses";
 import { Loom } from "../Loom/Loom.js";
 import { v4 } from "uuid";
@@ -16,7 +17,7 @@ import { MCPServerSSE, MCPServerStdio } from "../MCP/MCP.js";
 import OpenAI, { ClientOptions } from "openai";
 import { TraceNode, TraceSession } from "../TraceSession/TraceSession.js";
 
-export interface ToolCall {
+export interface Tool {
   name: string;
   parameters: Record<string, any>;
   callback: (...args: any[]) => any;
@@ -40,7 +41,7 @@ export interface AgentConfig {
   name: string;
   purpose: string;
   sub_agents?: Agent[];
-  tools?: ToolCall[];
+  tools?: Tool[];
   mcp_servers?: (MCPServerSSE | MCPServerStdio)[];
   model?: string;
   web_search?: WebSearchConfig;
@@ -75,6 +76,45 @@ export interface AgentResponse<T> {
   context: T[];
 }
 
+class RequestToolCall {
+  static fromResponses(tool_call: ResponseFunctionToolCall) {
+    return new RequestToolCall(tool_call.name, JSON.parse(tool_call.arguments));
+  }
+
+  static fromCompletions(tool_call: ChatCompletionMessageToolCall) {
+    return new RequestToolCall(
+      tool_call.function.name,
+      JSON.parse(tool_call.function.arguments)
+    );
+  }
+
+  public name: string;
+  public arguments: object;
+
+  constructor(name: string, args: object) {
+    this.name = name;
+    this.arguments = args;
+  }
+
+  get isMCP() {
+    return this.name.startsWith("mcp_");
+  }
+
+  get isSubAgent() {
+    return this.name === "CallSubAgent";
+  }
+
+  get isTool() {
+    return !this.isMCP && !this.isSubAgent;
+  }
+
+  get traceName() {
+    if (this.isMCP) return "mcp_tool_call";
+    if (this.isSubAgent) return "call_sub_agent";
+    return "tool_call";
+  }
+}
+
 export class Agent {
   public uuid: string;
   private config: AgentConfig;
@@ -103,17 +143,21 @@ export class Agent {
     return this._client as OpenAI;
   }
 
-  private async prepareTools(): Promise<Tool[]> {
-    const toolsArray = [];
+  private tool_box: Record<string, any> = {};
+  private prepared_tools: OAITool[] | undefined = undefined;
+
+  private async prepareTools(): Promise<OAITool[]> {
+    if (this.prepared_tools) return this.prepared_tools;
+    this.prepared_tools = [];
 
     if (this.config.mcp_servers) {
       for (const mcp of this.config.mcp_servers) {
         const server_tools = await mcp.getTools();
         for (const tool of server_tools.tools) {
-          toolsArray.push({
+          this.prepared_tools.push({
             type: "function" as const,
-            name: `mcp_${tool.name}`,
-            description: `MCP Tool: ${tool.name}`,
+            name: tool.name,
+            description: tool.description ?? `MCP Tool: ${tool.name}`,
             parameters: {
               type: "object",
               properties: tool.inputSchema.properties,
@@ -122,29 +166,58 @@ export class Agent {
             },
             strict: true,
           });
+          if (this.tool_box[tool.name]) {
+            throw new Error(
+              `Tool name conflict: ${tool.name}. Agent already has a tool with this name.`
+            );
+          } else {
+            this.tool_box[tool.name] = async (args: any) => {
+              const result = await mcp.callTool({
+                name: tool.name,
+                arguments: args,
+              });
+              if (result.isError) {
+                throw new Error(
+                  `[MCP Tool Call Error] ${tool.name} - ${valueToString(
+                    result.content
+                  )}`
+                );
+              }
+              return result.content;
+            };
+          }
         }
       }
     }
 
     if (this.config.tools && this.config.tools.length > 0) {
-      toolsArray.push(
-        ...this.config.tools.map((tool) => ({
-          type: "function" as const,
-          name: tool.name,
-          description: tool.description,
-          parameters: {
-            type: "object",
-            properties: tool.parameters,
-            required: Object.keys(tool.parameters),
-            additionalProperties: false,
-          },
-          strict: true,
-        }))
+      this.prepared_tools.push(
+        ...this.config.tools.map((tool) => {
+          const tool_call = {
+            type: "function" as const,
+            name: tool.name,
+            description: tool.description,
+            parameters: {
+              type: "object",
+              properties: tool.parameters,
+              required: Object.keys(tool.parameters),
+              additionalProperties: false,
+            },
+            strict: true,
+          };
+          if (this.tool_box[tool.name]) {
+            throw new Error(
+              `Tool name conflict: ${tool.name}. Agent already has a tool with this name.`
+            );
+          }
+          this.tool_box[tool.name] = tool.callback;
+          return tool_call;
+        })
       );
     }
 
     if (this.config.sub_agents && this.config.sub_agents.length > 0) {
-      toolsArray.push({
+      this.prepared_tools.push({
         type: "function" as const,
         name: "CallSubAgent",
         description:
@@ -167,27 +240,62 @@ export class Agent {
         },
         strict: true,
       });
+      if (this.tool_box["CallSubAgent"]) {
+        throw new Error(
+          `Tool name conflict: CallSubAgent. Agent already has a tool with this name.`
+        );
+      }
+      this.tool_box["CallSubAgent"] = async (args: {
+        sub_agent: string;
+        request: string;
+        trace?: TraceSession;
+        context?: any[];
+      }) => {
+        const sub_agent = this.config?.sub_agents?.find(
+          (agent) => agent.config.name === args.sub_agent
+        );
+        if (!sub_agent) {
+          throw new Error(
+            `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found`
+          );
+        }
+
+        const input = args.context
+          ? {
+              context: [
+                ...args.context,
+                {
+                  role: "user",
+                  content: args.request,
+                },
+              ],
+            }
+          : args.request;
+
+        const result = await sub_agent.run(input, args.trace);
+        return result.final_message;
+      };
     }
 
     if (this.config.web_search?.enabled) {
-      toolsArray.push({
+      this.prepared_tools.push({
         type: "web_search_preview" as const,
         ...this.config.web_search.config,
       });
     }
 
-    return toolsArray;
+    return this.prepared_tools;
   }
 
   private ToolsToCompletionTools(
-    tools: Tool[]
+    tools: OAITool[]
   ): ChatCompletionTool[] | undefined {
     if (!tools || tools.length === 0) return undefined;
 
     const toolsArray: ChatCompletionTool[] = [];
     toolsArray.push(
       ...tools
-        .filter((tool: Tool) => tool.type === "function")
+        .filter((tool: OAITool) => tool.type === "function")
         .map((tool: FunctionTool) => {
           return {
             type: "function" as const,
@@ -218,6 +326,42 @@ export class Agent {
         ? [{ content: input, role: "user" }]
         : input.context;
 
+    const web_search_config = this.config.web_search?.enabled
+      ? this.config.web_search.config
+      : undefined;
+
+    const user_location =
+      web_search_config?.user_location?.type === "approximate" &&
+      (web_search_config.user_location.city ||
+        web_search_config.user_location.country ||
+        web_search_config.user_location.region)
+        ? {
+            type: "approximate" as const,
+            approximate: {
+              ...(web_search_config.user_location.city && {
+                city: web_search_config.user_location.city,
+              }),
+              ...(web_search_config.user_location.country && {
+                country: web_search_config.user_location.country,
+              }),
+              ...(web_search_config.user_location.region && {
+                region: web_search_config.user_location.region,
+              }),
+            },
+          }
+        : undefined;
+
+    const web_search_options =
+      web_search_config &&
+      (web_search_config.search_context_size || user_location)
+        ? {
+            ...(web_search_config.search_context_size && {
+              search_context_size: web_search_config.search_context_size,
+            }),
+            ...(user_location && { user_location }),
+          }
+        : undefined;
+
     const response = await this.client.chat.completions.create({
       model: this.config.model as string,
       // metadata: {
@@ -241,21 +385,7 @@ export class Agent {
         ...context,
       ] as ChatCompletionMessageParam[],
       tools: this.ToolsToCompletionTools(await this.prepareTools()),
-      web_search_options: this.config.web_search?.enabled
-        ? {
-            search_context_size:
-              this.config.web_search.config?.search_context_size,
-            user_location: {
-              type: this.config.web_search.config?.user_location
-                ?.type as "approximate",
-              approximate: {
-                city: this.config.web_search.config?.user_location?.city,
-                country: this.config.web_search.config?.user_location?.country,
-                region: this.config.web_search.config?.user_location?.region,
-              },
-            },
-          }
-        : undefined,
+      web_search_options: web_search_options,
     });
 
     const hasToolCalls = response.choices.some(
@@ -314,135 +444,52 @@ export class Agent {
       const tool_calls = response.choices[0].message.tool_calls;
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
-          if (tool_call.function.name.startsWith("mcp_")) {
-            trace?.start("mcp_tool_call", {
-              tool_call,
-            });
-
-            const mcp_tool_name = tool_call.function.name.replace("mcp_", "");
-            const mcpResult = await this.config.mcp_servers?.reduce(
-              async (accPromise, server) => {
-                const acc = await accPromise;
-                if (acc.mcp && acc.tool) return acc;
-                const { tools } = await server.getTools();
-                const tool = tools.find(
-                  (tool: any) => tool.name === mcp_tool_name
-                );
-                return tool ? { mcp: server, tool } : acc;
-              },
-              Promise.resolve({
-                mcp: undefined as MCPServerSSE | MCPServerStdio | undefined,
-                tool: undefined,
-              })
-            );
-            const { mcp, tool } = mcpResult || {};
-            if (!mcp || !tool) {
-              call_results.push({
-                role: "tool" as const,
-                tool_call_id: tool_call.id,
-                content: `[MCP Tool Call Error] ${mcp_tool_name} - Tool not found`,
-              });
-              continue;
-            }
-
-            try {
-              const result = await mcp.callTool({
-                name: mcp_tool_name,
-                arguments: JSON.parse(tool_call.function.arguments),
-              });
-              if (result.isError) {
-                call_results.push({
-                  role: "tool" as const,
-                  tool_call_id: tool_call.id,
-                  content: `[MCP Tool Call Error] ${mcp_tool_name} - ${valueToString(
-                    result.content
-                  )}`,
-                });
-                continue;
-              }
-              call_results.push({
-                role: "tool" as const,
-                tool_call_id: tool_call.id,
-                content: valueToString(result.content),
-              });
-            } catch (error: Error | any) {
-              call_results.push({
-                role: "tool" as const,
-                tool_call_id: tool_call.id,
-                content: `[MCP Tool Call Error] ${mcp_tool_name} - ${error.message}`,
-              });
-            } finally {
-            }
-          } else if (tool_call.function.name === "CallSubAgent") {
-            trace?.start("call_sub_agent", {
-              tool_call,
-            });
-            const args = JSON.parse(tool_call.function.arguments);
-            const sub_agent = this.config.sub_agents?.find(
-              (agent) => agent.config.name === args.sub_agent
-            );
-
-            if (!sub_agent) {
-              call_results.push({
-                role: "tool" as const,
-                tool_call_id: tool_call.id,
-                content: `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found`,
-              });
-              continue;
-            }
-
-            const result = await sub_agent.run(
-              {
-                context: [
-                  ...context,
-                  {
-                    role: "user",
-                    content: args.request,
-                  },
-                ],
-              },
-              trace
-            );
-
+          const requestToolCall = RequestToolCall.fromCompletions(tool_call);
+          const tool = this.tool_box[requestToolCall.name];
+          if (!tool) {
             call_results.push({
               role: "tool" as const,
               tool_call_id: tool_call.id,
-              content: result.final_message,
+              content: `[Tool Call Error] ${requestToolCall.name} - Tool not found`,
             });
-          } else {
-            trace?.start("tool_call", {
-              tool_call,
-            });
-            const tool = this.config.tools?.find(
-              (tool) => tool.name === tool_call.function.name
-            );
+            continue;
+          }
+          trace?.start(requestToolCall.traceName, {
+            tool_call,
+          });
+          console.log(
+            `Completions Tool Call: ${requestToolCall.name} - ${JSON.stringify(
+              requestToolCall.arguments
+            )}`
+          );
 
-            if (!tool) {
+          try {
+            if (requestToolCall.isSubAgent) {
+              const result = await tool({
+                ...requestToolCall.arguments,
+                trace,
+                context,
+              });
               call_results.push({
                 role: "tool" as const,
                 tool_call_id: tool_call.id,
-                content: `[Tool Call Error] ${tool_call.function.name} - Tool not found`,
+                content: result,
               });
               continue;
             }
 
-            try {
-              const result = await tool.callback(
-                JSON.parse(tool_call.function.arguments)
-              );
-              call_results.push({
-                role: "tool" as const,
-                tool_call_id: tool_call.id,
-                content: valueToString(result),
-              });
-            } catch (error: Error | any) {
-              call_results.push({
-                role: "tool" as const,
-                tool_call_id: tool_call.id,
-                content: `[Tool Call Error] ${tool_call.function.name} - ${error.message}`,
-              });
-            } finally {
-            }
+            const result = await tool(requestToolCall.arguments);
+            call_results.push({
+              role: "tool" as const,
+              tool_call_id: tool_call.id,
+              content: valueToString(result),
+            });
+          } catch (error: Error | any) {
+            call_results.push({
+              role: "tool" as const,
+              tool_call_id: tool_call.id,
+              content: `[Tool Call Error] ${requestToolCall.name} - ${error.message}`,
+            });
           }
         }
       }
@@ -458,6 +505,15 @@ export class Agent {
       },
       trace
     ).finally(() => {});
+  }
+
+  private handle_output(response: OpenAI.Responses.Response) {
+    const hasToolCalls = response.output.some(
+      (item) => item.type === "function_call"
+    );
+
+    if (hasToolCalls) {
+    }
   }
 
   private async run_responses(
@@ -532,143 +588,53 @@ export class Agent {
     }
 
     const call_results: ResponseInputItem.FunctionCallOutput[] = [];
-    if (response.output[0].type === "function_call") {
+    if (hasToolCalls) {
       const tool_calls: ResponseFunctionToolCall[] =
         response.output as ResponseFunctionToolCall[];
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
-          if (tool_call.name.startsWith("mcp_")) {
-            trace?.start("mcp_tool_call", {
-              tool_call,
-            });
-
-            const mcp_tool_name = tool_call.name.replace("mcp_", "");
-            const mcpResult = await this.config.mcp_servers?.reduce(
-              async (accPromise, server) => {
-                const acc = await accPromise;
-                if (acc.mcp && acc.tool) return acc;
-                const { tools } = await server.getTools();
-                const tool = tools.find(
-                  (tool: any) => tool.name === mcp_tool_name
-                );
-                return tool ? { mcp: server, tool } : acc;
-              },
-              Promise.resolve({
-                mcp: undefined as MCPServerSSE | MCPServerStdio | undefined,
-                tool: undefined,
-              })
-            );
-            const { mcp, tool } = mcpResult || {};
-            if (!mcp || !tool) {
-              call_results.push({
-                type: "function_call_output" as const,
-                call_id: tool_call.call_id,
-                output: `[MCP Tool Call Error] ${mcp_tool_name} - Tool not found`,
-              });
-              continue;
-            }
-
-            try {
-              const result = await mcp.callTool({
-                name: mcp_tool_name,
-                arguments: JSON.parse(tool_call.arguments),
-              });
-              if (result.isError) {
-                call_results.push({
-                  type: "function_call_output" as const,
-                  call_id: tool_call.call_id,
-                  output: `[MCP Tool Call Error] ${mcp_tool_name} - ${valueToString(
-                    result.content
-                  )}`,
-                });
-                continue;
-              }
-              call_results.push({
-                type: "function_call_output" as const,
-                call_id: tool_call.call_id,
-                output: valueToString(result.content),
-              });
-            } catch (error: Error | any) {
-              call_results.push({
-                type: "function_call_output" as const,
-                call_id: tool_call.call_id,
-                output: `[MCP Tool Call Error] ${mcp_tool_name} - ${error.message}`,
-              });
-            } finally {
-            }
-          } else if (tool_call.name === "CallSubAgent") {
-            trace?.start("call_sub_agent", {
-              tool_call,
-            });
-
-            const args = JSON.parse(tool_call.arguments);
-            const sub_agent = this.config.sub_agents?.find(
-              (agent) => agent.config.name === args.sub_agent
-            );
-
-            if (!sub_agent) {
-              call_results.push({
-                type: "function_call_output",
-                call_id: tool_call.call_id,
-                output:
-                  `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found` as string,
-              });
-              continue;
-            }
-
-            const result = await sub_agent.run_responses(
-              {
-                context: [
-                  ...context,
-                  {
-                    role: "user",
-                    content: args.request,
-                  },
-                ],
-              },
-              trace
-            );
-
+          const requestToolCall = RequestToolCall.fromResponses(tool_call);
+          const tool = this.tool_box[requestToolCall.name];
+          if (!tool) {
             call_results.push({
-              type: "function_call_output",
+              type: "function_call_output" as const,
               call_id: tool_call.call_id,
-              output: result.final_message,
+              output: `[Tool Call Error] ${requestToolCall.name} - Tool not found`,
             });
-          } else {
-            trace?.start("tool_call", {
-              tool_call,
-            });
+            continue;
+          }
 
-            const tool = this.config.tools?.find(
-              (tool) => tool.name === tool_call.name
-            );
+          trace?.start(requestToolCall.traceName, {
+            tool_call,
+          });
 
-            if (!tool) {
+          try {
+            if (requestToolCall.isSubAgent) {
+              const result = await tool({
+                ...requestToolCall.arguments,
+                trace,
+                context: context,
+              });
               call_results.push({
-                type: "function_call_output",
+                type: "function_call_output" as const,
                 call_id: tool_call.call_id,
-                output: `[Tool Call Error] ${tool_call.name} - Tool not found`,
+                output: result,
               });
               continue;
             }
 
-            try {
-              const result = await tool.callback(
-                JSON.parse(tool_call.arguments)
-              );
-              call_results.push({
-                type: "function_call_output",
-                call_id: tool_call.call_id,
-                output: valueToString(result),
-              });
-            } catch (error: Error | any) {
-              call_results.push({
-                type: "function_call_output",
-                call_id: tool_call.call_id,
-                output: `[Tool Call Error] ${tool_call.name} - ${error.message}`,
-              });
-            } finally {
-            }
+            const result = await tool(requestToolCall.arguments);
+            call_results.push({
+              type: "function_call_output" as const,
+              call_id: tool_call.call_id,
+              output: valueToString(result),
+            });
+          } catch (error: Error | any) {
+            call_results.push({
+              type: "function_call_output" as const,
+              call_id: tool_call.call_id,
+              output: `[Tool Call Error] ${requestToolCall.name} - ${error.message}`,
+            });
           }
         }
       }
@@ -701,7 +667,7 @@ export class Agent {
     return this.run_completions({ context: content }, trace) as any;
   }
 
-  public asTool(parameters?: object): ToolCall {
+  public asTool(parameters?: object): Tool {
     return {
       name: this.config.name.replace(/[^a-zA-Z0-9_-]/g, ""),
       parameters: parameters
