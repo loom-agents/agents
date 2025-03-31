@@ -12,9 +12,9 @@ import {
 } from "openai/resources/responses/responses";
 import { Loom } from "../Loom/Loom.js";
 import { v4 } from "uuid";
-import { Trace } from "../Trace/Trace.js";
 import { MCPServerSSE, MCPServerStdio } from "../MCP/MCP.js";
 import OpenAI, { ClientOptions } from "openai";
+import { TraceNode, TraceSession } from "../TraceSession/TraceSession.js";
 
 export interface ToolCall {
   name: string;
@@ -206,9 +206,12 @@ export class Agent {
 
   private async run_completions(
     input: string | AgentRequest<ChatCompletionMessageParam>,
-    trace?: Trace
+    trace?: TraceSession
   ): Promise<AgentResponse<ChatCompletionMessageParam>> {
-    const run_trace: Trace | undefined = trace?.start("run_completions", {});
+    const run_trace: TraceNode | undefined = trace?.start(
+      "run_completions",
+      {}
+    );
 
     const context: ChatCompletionMessageParam[] =
       typeof input === "string"
@@ -256,7 +259,6 @@ export class Agent {
     });
 
     if (response.choices[0].finish_reason === "stop") {
-      run_trace?.end();
       return {
         status: "completed",
         final_message: response.choices[0].message.content as string,
@@ -268,7 +270,6 @@ export class Agent {
     }
 
     if (response.choices[0].finish_reason === "content_filter") {
-      run_trace?.end();
       return {
         status: "error",
         final_message:
@@ -281,7 +282,6 @@ export class Agent {
     }
 
     if (response.choices[0].finish_reason === "length") {
-      run_trace?.end();
       return {
         status: "error",
         final_message: "[Length] " + response.choices[0].message.content,
@@ -293,7 +293,6 @@ export class Agent {
     }
 
     if (response.choices[0].finish_reason === "function_call") {
-      run_trace?.end();
       return {
         status: "error",
         final_message: "[Function Call] Not implemented",
@@ -310,7 +309,7 @@ export class Agent {
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
           if (tool_call.function.name.startsWith("mcp_")) {
-            const mcp_tool_trace = run_trace?.start("mcp_tool_call", {
+            const mcp_tool_trace = trace?.start("mcp_tool_call", {
               tool_call,
             });
 
@@ -337,7 +336,6 @@ export class Agent {
                 tool_call_id: tool_call.id,
                 content: `[MCP Tool Call Error] ${mcp_tool_name} - Tool not found`,
               });
-              mcp_tool_trace?.end();
               continue;
             }
 
@@ -354,7 +352,6 @@ export class Agent {
                     result.content
                   )}`,
                 });
-                mcp_tool_trace?.end();
                 continue;
               }
               call_results.push({
@@ -369,10 +366,9 @@ export class Agent {
                 content: `[MCP Tool Call Error] ${mcp_tool_name} - ${error.message}`,
               });
             } finally {
-              mcp_tool_trace?.end();
             }
           } else if (tool_call.function.name === "CallSubAgent") {
-            const sub_agent_trace = run_trace?.start("call_sub_agent", {
+            const sub_agent_trace = trace?.start("call_sub_agent", {
               tool_call,
             });
             const args = JSON.parse(tool_call.function.arguments);
@@ -386,7 +382,6 @@ export class Agent {
                 tool_call_id: tool_call.id,
                 content: `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found`,
               });
-              sub_agent_trace?.end();
               continue;
             }
 
@@ -400,7 +395,7 @@ export class Agent {
                   },
                 ],
               },
-              sub_agent_trace
+              trace
             );
 
             call_results.push({
@@ -408,9 +403,8 @@ export class Agent {
               tool_call_id: tool_call.id,
               content: result.final_message,
             });
-            sub_agent_trace?.end();
           } else {
-            const tool_call_trace = run_trace?.start("tool_call", {
+            const tool_call_trace = trace?.start("tool_call", {
               tool_call,
             });
             const tool = this.config.tools?.find(
@@ -423,7 +417,6 @@ export class Agent {
                 tool_call_id: tool_call.id,
                 content: `[Tool Call Error] ${tool_call.function.name} - Tool not found`,
               });
-              tool_call_trace?.end();
               continue;
             }
 
@@ -443,7 +436,6 @@ export class Agent {
                 content: `[Tool Call Error] ${tool_call.function.name} - ${error.message}`,
               });
             } finally {
-              tool_call_trace?.end();
             }
           }
         }
@@ -458,17 +450,15 @@ export class Agent {
           ...call_results,
         ],
       },
-      run_trace
-    ).finally(() => {
-      run_trace?.end();
-    });
+      trace
+    ).finally(() => {});
   }
 
   private async run_responses(
     input: string | AgentRequest<ResponseInputItem>,
-    trace?: Trace
+    trace?: TraceSession
   ): Promise<AgentResponse<ResponseInputItem>> {
-    const run_trace: Trace | undefined = trace?.start("run_responses", {});
+    const run_trace: TraceNode | undefined = trace?.start("run_responses", {});
 
     const context: ResponseInputItem[] =
       typeof input === "string"
@@ -500,7 +490,10 @@ export class Agent {
     });
 
     if (response.status === "completed" && response.output_text) {
-      run_trace?.end();
+      console.log(
+        `we think we finished so?`,
+        JSON.stringify(response, null, 2)
+      );
       return {
         status: "completed",
         final_message: response.output_text || "[Unknown] Something went wrong",
@@ -509,7 +502,6 @@ export class Agent {
     }
 
     if (response.status === "failed") {
-      run_trace?.end();
       return {
         status: "error",
         final_message: `[Failed]  ${
@@ -520,7 +512,6 @@ export class Agent {
     }
 
     if (response.status === "incomplete") {
-      run_trace?.end();
       return {
         status: "error",
         final_message: `[Incomplete]  ${
@@ -537,7 +528,7 @@ export class Agent {
       if (tool_calls && tool_calls.length > 0) {
         for (const tool_call of tool_calls) {
           if (tool_call.name.startsWith("mcp_")) {
-            const mcp_tool_trace = run_trace?.start("mcp_tool_call", {
+            const mcp_tool_trace = trace?.start("mcp_tool_call", {
               tool_call,
             });
 
@@ -564,7 +555,6 @@ export class Agent {
                 call_id: tool_call.call_id,
                 output: `[MCP Tool Call Error] ${mcp_tool_name} - Tool not found`,
               });
-              mcp_tool_trace?.end();
               continue;
             }
 
@@ -581,7 +571,6 @@ export class Agent {
                     result.content
                   )}`,
                 });
-                mcp_tool_trace?.end();
                 continue;
               }
               call_results.push({
@@ -596,10 +585,9 @@ export class Agent {
                 output: `[MCP Tool Call Error] ${mcp_tool_name} - ${error.message}`,
               });
             } finally {
-              mcp_tool_trace?.end();
             }
           } else if (tool_call.name === "CallSubAgent") {
-            const sub_agent_trace = run_trace?.start("call_sub_agent", {
+            const sub_agent_trace = trace?.start("call_sub_agent", {
               tool_call,
             });
 
@@ -615,7 +603,6 @@ export class Agent {
                 output:
                   `[Sub Agent Error] ${args.sub_agent} - Sub Agent not found` as string,
               });
-              sub_agent_trace?.end();
               continue;
             }
 
@@ -629,7 +616,7 @@ export class Agent {
                   },
                 ],
               },
-              sub_agent_trace
+              trace
             );
 
             call_results.push({
@@ -637,9 +624,8 @@ export class Agent {
               call_id: tool_call.call_id,
               output: result.final_message,
             });
-            sub_agent_trace?.end();
           } else {
-            const tool_call_trace = run_trace?.start("tool_call", {
+            const tool_call_trace = trace?.start("tool_call", {
               tool_call,
             });
 
@@ -653,7 +639,6 @@ export class Agent {
                 call_id: tool_call.call_id,
                 output: `[Tool Call Error] ${tool_call.name} - Tool not found`,
               });
-              tool_call_trace?.end();
               continue;
             }
 
@@ -673,7 +658,6 @@ export class Agent {
                 output: `[Tool Call Error] ${tool_call.name} - ${error.message}`,
               });
             } finally {
-              tool_call_trace?.end();
             }
           }
         }
@@ -684,17 +668,15 @@ export class Agent {
       {
         context: [...context, ...response.output, ...call_results],
       },
-      run_trace
-    ).finally(() => {
-      run_trace?.end();
-    });
+      trace
+    ).finally(() => {});
   }
 
   public async run(
     input:
       | string
       | AgentRequest<ResponseInputItem | ChatCompletionMessageParam>,
-    trace?: Trace
+    trace?: TraceSession
   ): Promise<AgentResponse<ResponseInputItem | ChatCompletionMessageParam>> {
     const content: any =
       typeof input === "string"

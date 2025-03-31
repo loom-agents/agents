@@ -1,83 +1,77 @@
-import { ResponseInputItem } from "openai/resources/responses/responses";
-import { Agent, AgentRequest, AgentResponse } from "../Agents/Agent.js";
-import { Trace } from "../Trace/Trace.js";
-import { v4 as uuidv4 } from "uuid";
-import { ChatCompletionMessageParam } from "openai/resources/chat";
+import { Agent, AgentRequest, AgentResponse } from "../Agent/Agent.js";
+import { TraceSession } from "../TraceSession/TraceSession.js";
 
 export interface RunnerConfig {
-  max_depth?: number;
+  maxDepth?: number;
   name?: string;
   id?: string;
   context?: Record<string, any>;
 }
 
 export interface RunnerResponse<T> extends AgentResponse<T> {
-  trace: Trace;
+  traceTree: any;
 }
 
 export class Runner {
-  private traces: Trace[] = [];
   private config: RunnerConfig;
   private agent: Agent;
+  private traceSession: TraceSession;
 
   constructor(agent: Agent, config: RunnerConfig = {}) {
     if (!agent) {
       throw new Error("Agent is required");
     }
-
     this.config = {
       name: config.name || "Runner",
-      id: config.id || uuidv4(),
-      max_depth: config.max_depth || 10,
+      id: config.id || "",
+      maxDepth: config.maxDepth || 10,
       context: config.context || {},
     };
-
     this.agent = agent;
+    // Create a new TraceSession for this run.
+    this.traceSession = new TraceSession("RunnerSession", {
+      agent: this.agent.uuid,
+      config: this.config,
+    });
   }
 
+  /**
+   * Runs the agent through potentially multiple turns,
+   * ensuring each turn is traced and ultimately returning the full trace tree.
+   */
   public async run(
-    input:
-      | string
-      | AgentRequest<ResponseInputItem>
-      | AgentRequest<ChatCompletionMessageParam>
-  ): Promise<RunnerResponse<ResponseInputItem | ChatCompletionMessageParam>> {
-    const agent_trace = new Trace("run", {
-      agent: this.agent.uuid,
-    });
-
-    this.traces.push(agent_trace);
+    input: string | AgentRequest<any>
+  ): Promise<RunnerResponse<any>> {
+    // Start a top-level trace for the run.
+    this.traceSession.start("runner.run", { input });
 
     let depth = 0;
-    const maxMaxDepth = this.config.max_depth || 10;
+    let result = await this.agent.run(input, this.traceSession);
 
-    let result: AgentResponse<ResponseInputItem | ChatCompletionMessageParam> =
-      await this.agent.run(input, agent_trace);
-
-    // probably legacy code, meant to catch tool_calls that didn't get wrapped in the recurse in agent.run TODO: debug
-    do {
-      depth += 1;
-      if (result.status === "completed") {
-        agent_trace.end();
-        return { ...result, trace: agent_trace };
-      }
-
+    // For multi-turn interactions, wrap each turn in its own trace.
+    while (
+      depth < (this.config.maxDepth || 10) &&
+      result.status !== "completed"
+    ) {
+      depth++;
+      this.traceSession.start(`turn-${depth}`, {});
       result = await this.agent.run(
-        {
-          context: result.context,
-        },
-        agent_trace
+        { context: result.context },
+        this.traceSession
       );
-    } while (depth < maxMaxDepth && result.status !== "completed");
+      this.traceSession.end(); // End current turn trace.
+    }
 
-    agent_trace.end();
-    return { ...result, trace: agent_trace };
+    // End the top-level run trace.
+    this.traceSession.end();
+
+    return { ...result, traceTree: this.traceSession.getTraceTree() };
   }
 
-  public getLastTrace(): Trace {
-    return this.traces[this.traces.length - 1];
-  }
-
-  public getTraces(): Trace[] {
-    return this.traces;
+  /**
+   * Renders the entire trace tree as a formatted string.
+   */
+  public renderTraces(): string {
+    return this.traceSession.render();
   }
 }
