@@ -18,12 +18,13 @@ import { v4 } from "uuid";
 import { MCPServerSSE, MCPServerStdio } from "../MCP/MCP.js";
 import OpenAI, { ClientOptions } from "openai";
 import { TraceNode, TraceSession } from "../TraceSession/TraceSession.js";
+import { object, SchemaFragment } from "loom-schema";
 
 export interface Tool {
   name: string;
-  parameters: Record<string, any>;
-  callback: (...args: any[]) => any;
+  parameters: SchemaFragment<any> | Record<string, any>;
   description: string;
+  callback: (...args: any[]) => any;
 }
 
 export interface WebSearchConfig {
@@ -66,6 +67,11 @@ const valueToString = (value: any): string => {
   }
 
   return String(value);
+};
+
+const normalizeToRegex = (content: string, regexp: string) => {
+  const regex = new RegExp(regexp, "g");
+  return content.replace(regex, "_");
 };
 
 export interface AgentRequest<T> {
@@ -195,35 +201,45 @@ export class Agent {
     if (this.config.tools && this.config.tools.length > 0) {
       this.prepared_tools.push(
         ...this.config.tools.map((tool) => {
+          const tool_name: string = normalizeToRegex(
+            tool.name,
+            "^[a-zA-Z0-9_-]+$"
+          );
           const tool_call = {
             type: "function" as const,
-            name: tool.name,
+            name: tool_name,
             description: tool.description,
-            parameters: {
-              type: "object",
-              properties: tool.parameters,
-              required: Object.keys(tool.parameters),
-              additionalProperties: false,
-            },
+            parameters:
+              typeof tool.parameters?.toSchema === "function"
+                ? tool.parameters.toSchema()
+                : {
+                    type: "object",
+                    properties: tool.parameters ?? {},
+                    required: tool.parameters
+                      ? Object.keys(tool.parameters)
+                      : [],
+                    additionalProperties: false,
+                  },
             strict: true,
           };
-          if (this.tool_box[tool.name]) {
+          if (this.tool_box[tool_name]) {
             throw new Error(
-              `Tool name conflict: ${tool.name}. Agent already has a tool with this name.`
+              `Tool name conflict: ${tool_name}. Agent already has a tool with this name.`
             );
           }
-          this.tool_box[tool.name] = tool.callback;
+          this.tool_box[tool_name] = tool.callback;
           return tool_call;
         })
       );
     }
 
     if (this.config.sub_agents && this.config.sub_agents.length > 0) {
+      // Is it better to have agents as an enum or to be an actual `function` definition? TODO: Learn.
       this.prepared_tools.push({
         type: "function" as const,
         name: "CallSubAgent",
         description:
-          "Pass an input to a sub agent for processing and return the output",
+          "Call a SubAgent with a given request. The sub agent will be called with the request and the context.",
         parameters: {
           type: "object",
           properties: {

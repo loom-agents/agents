@@ -12,14 +12,15 @@
   "license": "MIT",
   "description": "",
   "devDependencies": {
-    "@playwright/test": "^1.51.1",
     "@types/node": "^22.13.13",
     "barrelsby": "^2.8.1",
+    "jest": "^29.7.0",
     "typescript": "^5.8.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.8.0",
-    "loom-schema": "^1.0.1",
+    "@types/jest": "^29.5.14",
+    "loom-schema": "^1.0.3",
     "openai": "^4.89.0",
     "uuid": "^11.1.0"
   },
