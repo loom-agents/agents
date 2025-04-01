@@ -22,11 +22,11 @@ import {
   ResponseOutputText,
 } from "openai/resources/responses/responses";
 import { Loom } from "../Loom/Loom.js";
-import { v4 } from "uuid";
 import { MCPServerSSE, MCPServerStdio } from "../MCP/MCP.js";
 import OpenAI, { ClientOptions } from "openai";
 import { TraceNode, TraceSession } from "../TraceSession/TraceSession.js";
 import { object, SchemaFragment } from "loom-schema";
+import { uuid } from "../Utils/Utils.js";
 
 export interface Tool {
   name: string;
@@ -145,7 +145,7 @@ export class Agent {
     if (config.client_config) this._client = new OpenAI(config.client_config);
     if (config.api) this._api = config.api;
 
-    this.uuid = `agent.${v4()}`;
+    this.uuid = uuid("Agent");
 
     this.config = {
       ...config,
@@ -342,7 +342,9 @@ export class Agent {
     input: string | AgentRequest<ChatCompletionMessageParam>,
     trace?: TraceSession
   ): Promise<AgentResponse<ChatCompletionMessageParam>> {
-    trace?.start("run_completions", {});
+    trace?.start("run_completions", {
+      uuid: uuid("Agent Completions Run"),
+    });
 
     const context: ChatCompletionMessageParam[] =
       typeof input === "string"
@@ -478,6 +480,7 @@ export class Agent {
           }
           trace?.start(requestToolCall.traceName, {
             tool_call,
+            uuid: uuid("Agent Tool Call"),
           });
 
           try {
@@ -528,7 +531,9 @@ export class Agent {
     input: string | AgentRequest<ResponseInputItem>,
     trace?: TraceSession
   ): Promise<AgentResponse<ResponseInputItem>> {
-    trace?.start("run_responses", {});
+    trace?.start("run_responses", {
+      uuid: uuid("Agent Responses Run"),
+    });
 
     const context: ResponseInputItem[] =
       typeof input === "string"
@@ -614,6 +619,7 @@ export class Agent {
 
           trace?.start(requestToolCall.traceName, {
             tool_call,
+            uuid: uuid("Agent Tool Call"),
           });
 
           try {

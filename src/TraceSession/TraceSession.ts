@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { uuid } from "../Utils/Utils";
 
 export interface TraceNode {
   id: string;
@@ -15,7 +15,7 @@ export class TraceSession {
 
   constructor(name: string, data: any = {}) {
     this.root = {
-      id: `trace.${uuidv4()}`,
+      id: uuid("TraceSession"),
       name,
       data,
       startTime: Date.now(),
@@ -26,7 +26,7 @@ export class TraceSession {
 
   public start(name: string, data: any = {}): TraceNode {
     const newNode: TraceNode = {
-      id: `trace.${uuidv4()}`,
+      id: uuid("TraceNode"),
       name,
       data,
       startTime: Date.now(),

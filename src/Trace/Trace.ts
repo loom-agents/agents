@@ -1,4 +1,4 @@
-import { v4 } from "uuid";
+import { uuid } from "../Utils/Utils";
 
 export interface TraceDetails {
   name: string;
@@ -18,7 +18,7 @@ export class Trace {
   constructor(name: string, data: any, parent?: Trace) {
     this.details = {
       name,
-      uuid: `trace.${v4()}`,
+      uuid: uuid("Trace"),
       data,
       startTime: Date.now(),
       children: [],

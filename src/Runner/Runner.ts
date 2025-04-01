@@ -1,5 +1,6 @@
 import { Agent, AgentRequest, AgentResponse } from "../Agent/Agent.js";
 import { TraceSession } from "../TraceSession/TraceSession.js";
+import { uuid } from "../Utils/Utils.js";
 
 export interface RunnerConfig {
   maxDepth?: number;
@@ -29,8 +30,8 @@ export class Runner {
     };
     this.agent = agent;
     // Create a new TraceSession for this run.
-    this.traceSession = new TraceSession("RunnerSession", {
-      agent: this.agent.uuid,
+    this.traceSession = new TraceSession("runner.session", {
+      agent: uuid("Runner Session"),
       config: this.config,
     });
   }
