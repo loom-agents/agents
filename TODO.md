@@ -9,6 +9,7 @@
 - [ ] Find bugs
 - [ ] If a sub agent type mismatches a parent agent type the context fed in needs to be normalized or it is misaligned and bad things happen
 - [ ] UUID _everything_
+- [ ] normalize trace names, most likely `${Class}.${Function}` 
 - [ ] Debugging
 - [X] Normalize Agent tool use, refactor down to a simpler _dry_er wrapper. 
 - [X] Validate sub agent flow is proper, maybe sub agents need more context. (maybe we have a flow where agents decide what of their output / task was valid or useful context, kind of sounds like something a dev would decide on instead of loom itself? thinking. ) (Marking complete w/ addition of `examples/debate-orchestration.ts / debate.json sample`)
