@@ -44,7 +44,7 @@ export class Runner {
     input: string | AgentRequest<any>
   ): Promise<RunnerResponse<any>> {
     // Start a top-level trace for the run.
-    this.traceSession.start("runner.run", { input });
+    this.traceSession.start("runner.run", { input, uuid: uuid("Runner Run") });
 
     let depth = 0;
     let result = await this.agent.run(input, this.traceSession);
@@ -55,7 +55,9 @@ export class Runner {
       result.status !== "completed"
     ) {
       depth++;
-      this.traceSession.start(`turn-${depth}`, {});
+      this.traceSession.start(`turn-${depth}`, {
+        uuid: uuid("Runner Turn"),
+      });
       result = await this.agent.run(
         { context: result.context },
         this.traceSession
