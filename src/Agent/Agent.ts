@@ -1,6 +1,9 @@
 import {
   ChatCompletionAssistantMessageParam,
+  ChatCompletionContentPart,
+  ChatCompletionContentPartImage,
   ChatCompletionContentPartText,
+  ChatCompletionMessage,
   ChatCompletionMessageParam,
   ChatCompletionMessageToolCall,
   ChatCompletionTool,
@@ -12,6 +15,11 @@ import {
   ResponseInputItem,
   ResponseOutputMessage,
   Tool as OAITool,
+  ResponseInputImage,
+  ResponseInputFile,
+  ResponseInputText,
+  ResponseFunctionWebSearch,
+  ResponseOutputText,
 } from "openai/resources/responses/responses";
 import { Loom } from "../Loom/Loom.js";
 import { v4 } from "uuid";
@@ -295,7 +303,7 @@ export class Agent {
       };
     }
 
-    if (this.config.web_search?.enabled) {
+    if (this.config.web_search?.enabled && this._api !== "completions") {
       this.prepared_tools.push({
         type: "web_search_preview" as const,
         ...this.config.web_search.config,
@@ -342,14 +350,11 @@ export class Agent {
         : input.context;
 
     const web_search_config = this.config.web_search?.enabled
-      ? this.config.web_search.config
+      ? this.config.web_search.config ?? {}
       : undefined;
 
     const user_location =
-      web_search_config?.user_location?.type === "approximate" &&
-      (web_search_config.user_location.city ||
-        web_search_config.user_location.country ||
-        web_search_config.user_location.region)
+      web_search_config?.user_location?.type === "approximate"
         ? {
             type: "approximate" as const,
             approximate: {
@@ -366,16 +371,18 @@ export class Agent {
           }
         : undefined;
 
-    const web_search_options =
-      web_search_config &&
-      (web_search_config.search_context_size || user_location)
-        ? {
-            ...(web_search_config.search_context_size && {
-              search_context_size: web_search_config.search_context_size,
-            }),
-            ...(user_location && { user_location }),
-          }
-        : undefined;
+    const web_search_options = this.config.web_search?.enabled
+      ? {
+          ...(web_search_config?.search_context_size && {
+            search_context_size: web_search_config.search_context_size,
+          }),
+          ...(user_location && { user_location }),
+        }
+      : undefined;
+
+    const final_web_search_options = this.config.web_search?.enabled
+      ? web_search_options ?? {}
+      : undefined;
 
     const response = await this.client.chat.completions.create({
       model: this.config.model as string,
@@ -400,7 +407,7 @@ export class Agent {
         ...context,
       ] as ChatCompletionMessageParam[],
       tools: this.ToolsToCompletionTools(await this.prepareTools()),
-      web_search_options: web_search_options,
+      web_search_options: final_web_search_options,
     });
 
     const hasToolCalls = response.choices.some(
@@ -515,15 +522,6 @@ export class Agent {
       },
       trace
     ).finally(() => {});
-  }
-
-  private handle_output(response: OpenAI.Responses.Response) {
-    const hasToolCalls = response.output.some(
-      (item) => item.type === "function_call"
-    );
-
-    if (hasToolCalls) {
-    }
   }
 
   private async run_responses(
