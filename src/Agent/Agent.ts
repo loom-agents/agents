@@ -57,7 +57,12 @@ export interface AgentConfig {
   model?: string;
   web_search?: WebSearchConfig;
   timeout_ms?: number;
+
   client_config?: ClientOptions;
+  request_options?:
+    | OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+    | OpenAI.Responses.ResponseCreateParamsNonStreaming;
+
   api?: "completions" | "responses";
 }
 
@@ -410,6 +415,8 @@ export class Agent {
       ] as ChatCompletionMessageParam[],
       tools: this.ToolsToCompletionTools(await this.prepareTools()),
       web_search_options: final_web_search_options,
+
+      ...((this.config.request_options as any) ?? {}),
     });
 
     const hasToolCalls = response.choices.some(
@@ -562,6 +569,7 @@ export class Agent {
         ...context,
       ] as ResponseInputItem[],
       tools: await this.prepareTools(),
+      ...((this.config.request_options as any) ?? {}),
     });
 
     const hasToolCalls = response.output.some(
