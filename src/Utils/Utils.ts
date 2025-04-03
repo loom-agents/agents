@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 export const v4 = () => {
   const random = crypto.getRandomValues(new Uint8Array(16));
   random[6] = (random[6] & 0x0f) | 0x40; // Set bits 6-7 to version 0100
