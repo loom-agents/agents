@@ -1,275 +1,154 @@
-# LOOM ([L]ightweight [O]rchestration [O]f [M]ultiple agents)
+# LOOM – Lightweight Orchestration Of Multiple Agents
 
-A lightweight, composable framework for building hierarchical AI agent systems using OpenAI's API.
+**LOOM** is a minimalist framework for building hierarchical, composable AI agent systems powered by OpenAI.
+
+Designed for developers and researchers who want full control with zero bloat, LOOM provides the essential primitives for building intelligent, purposeful agents that can think, act, and collaborate.
+
+---
 
 ## Overview
 
-This project provides a simple yet powerful way to create AI agents that can:
-- Execute specific tasks based on defined purposes
-- Use tools to interact with external systems
-- Organize into hierarchical structures with parent/child relationships
-- Perform web searches to access real-time information
+LOOM makes it simple to define AI agents that:
+
+- Pursue goals and complete tasks
+- Use external tools and APIs
+- Form complex hierarchies with parent/child behavior
+- Access live data via web search
+- Avoid infinite loops with automatic recursion guards
+
+Whether you're building a self-healing coding assistant, a research pipeline, or a swarm of interconnected agents — LOOM gives you the scaffolding to do it with clarity and control.
+
+---
 
 ## Features
 
-- **Agent-Based Architecture**: Create specialized agents with distinct purposes and capabilities
-- **Hierarchical Composition**: Build complex systems by composing agents into parent/child relationships
-- **Tool Integration**: Extend agent capabilities by adding custom tools
-- **Web Search**: Enable agents to perform web searches for real-time information
-- **Automatic Recursion Management**: Built-in protection against infinite loops
-- **Multi-Turn Agency**: Agents can plan, ask for clarification, and then execute. 
-- **MCP**: Agents can leverage third party integrations through the [Model Context Protocol](https://modelcontextprotocol.io/introduction)
+- **Composable Agent Architecture** – Define agents with distinct roles and capabilities  
+- **Hierarchical Composition** – Parent agents can route tasks to specialized children  
+- **Custom Tooling** – Plug in functions and external APIs as callable tools  
+- **Web Search Integration** – Pull real-time data into your agent's context  
+- **Recursion Protection** – Prevent runaway loops and infinite delegation  
+- **Multi-Turn Interaction** – Let agents plan, clarify, and act in sequence  
+- **MCP Compatible** – Plug into the [Model Context Protocol](https://modelcontextprotocol.io/introduction) for tool-rich agent networks  
+- **Cross-API Bridging** – Share context between Completions and Chat models (*experimental*)  
+  > ⚠️ Note: [OpenAI currently has a bug](https://github.com/loom-agents/agents/blob/main/TODO.md#openai-bugs) that affects the Completions API which could be problematic.
+
+> *Experimental features are functional and actively improving.*
+
+---
 
 ## Installation
 
 ```bash
-$ bun i loom-agents
+bun i loom-agents
 ```
+
+---
 
 ## Quick Start
 
-```typescript
+```ts
 import { Agent, Runner } from "loom-agents";
 
-async function main() {
-  // Create a simple agent
-  const greetingAgent = new Agent({
-    name: "Greeting Agent",
-    purpose: "Generate friendly greetings",
-  });
+const agent = new Agent({
+  name: "Greeting Agent",
+  purpose: "Generate friendly greetings",
+});
 
-  const runner = new Runner(greetingAgent);
-  const result = await runner.run("Say hello to the user");
-  console.log(result);
-}
+const runner = new Runner(agent);
 
-main().catch(console.error);
+const result = await runner.run("Say hello to the user");
+console.log(result);
 ```
+
+---
 
 ## Example Projects
 
-### Loom-Agents Code: Open Source Coding CLI Agent
+### [loom-agents-code](https://github.com/loom-agents/loom-agents-code)
+A CLI agent for code generation, refactoring, and debugging — built entirely with LOOM. Think Claude Code, but open-source and composable.
 
-[Loom-Agents Code](https://github.com/loom-agents/loom-agents-code) is an open source CLI agent designed for coding tasks, similar to Claude Code. This project demonstrates how to use the LOOM framework to orchestrate multiple specialized agents for tasks like code generation, debugging, code review, and documentation. It serves as a practical example of building a composable, hierarchical AI system that can efficiently manage coding-related workflows.
+---
 
-## Creating Hierarchical Agent Systems
+## Hierarchical Agent Systems
 
-Agents can be composed hierarchically, with parent agents delegating tasks to specialized child agents:
+Agents can call other agents. Here’s a homework helper that delegates to subject-specific tutors:
 
-```typescript
-import { Agent, Runner } from "loom-agents";
+```ts
+const mathTutor = new Agent({ name: "Math Tutor", purpose: "Explain math with examples." });
+const historyTutor = new Agent({ name: "History Tutor", purpose: "Answer historical questions." });
 
-async function main() {
-  // Create specialized tutor agents
-  const mathTutorAgent = new Agent({
-    name: "Math Tutor",
-    purpose:
-      "You provide help with math problems. Explain your reasoning at each step and include examples",
-  });
-
-  const historyTutorAgent = new Agent({
-    name: "History Tutor",
-    purpose:
-      "You provide assistance with historical queries. Explain important events and context clearly",
-  });
-
-  // Create the triage agent with sub-agents
-  const triageAgent = new Agent({
-    name: "Triage Agent",
-    purpose:
-      "Determine which agent to use based on the user's homework question",
-    sub_agents: [mathTutorAgent, historyTutorAgent],
-  });
-
-  const runner = new Runner(triageAgent);
-
-  // Test the implementation
-  const result1 = await runner.run("What is 2 + 2?");
-  console.log("Result 1:", result1);
-
-  const result2 = await runner.run(
-    "Who was the best president in American history?"
-  );
-  console.log("Result 2:", result2);
-}
-
-main().catch(console.error);
+const triageAgent = new Agent({
+  name: "Triage Agent",
+  purpose: "Route questions to the appropriate tutor",
+  sub_agents: [mathTutor, historyTutor],
+});
 ```
 
-## Adding Custom Tools
+---
 
-Extend agents with custom tools to interact with external systems:
+## Tools & Integrations
 
-```typescript
-import { Agent, Runner, ToolCall } from "loom-agents";
+Agents can be extended with custom tools:
 
-async function main() {
-  const timeAgent = new Agent({
-    name: "TimeAgent",
-    purpose: "Get the current time and handle time operations",
-    tools: [
-      {
-        name: "GetTime",
-        description: "Get the current time",
-        parameters: {},
-        callback: () => {
-          const time = new Date().toLocaleTimeString();
-          return {
-            success: true,
-            message: "Retrieved current time",
-            data: time,
-          };
-        },
-      },
-    ],
-  });
-
-  const farewellAgent = new Agent({
-    name: "Farewell Agent",
-    purpose: "Generate a contextual farewell message",
-    sub_agents: [timeAgent],
-  });
-
-  const runner = new Runner(farewellAgent);
-  const result = await runner.run("Say goodbye with the current time");
-
-  console.log(result);
-}
-
-main().catch(console.error);
+```ts
+tools: [
+  {
+    name: "GetTime",
+    description: "Returns the current time",
+    callback: () => new Date().toLocaleTimeString(),
+  }
+]
 ```
 
-## Using Agents as Tools
+Agents can also become tools themselves — a powerful way to modularize behavior.
 
-You can use agents as tools for other agents, allowing for flexible composition:
+---
 
-```typescript
-import { Agent, Runner, ToolCall } from "loom-agents";
+## Web Search
 
-async function main() {
-  const translationAgent = new Agent({
-    name: "Translation Agent",
-    purpose:
-      "I translate text into different languages, just let me know the language you want to translate to.",
-  });
+Need live data? Enable web search:
 
-  const greetingAgent = new Agent({
-    name: "Greeting Agent",
-    purpose: "Generate a greeting",
-    tools: [
-      translationAgent.asTool({
-        request: {
-          type: "string",
-          description: `The text to translate`,
-        },
-        language: {
-          type: "string",
-          description: `The language to translate to`,
-        },
-      }),
-    ],
-  });
-
-  const runner = new Runner(greetingAgent);
-  const result = await runner.run("Say hello to the user in spanish");
-  console.log(result);
+```ts
+web_search: {
+  enabled: true,
+  config: {
+    search_context_size: "medium",
+    user_location: { type: "approximate", country: "US" },
+  }
 }
-
-main().catch(console.error);
 ```
 
-## Enabling Web Search
+---
 
-Give your agents access to real-time information from the web:
+## Complex Systems in 20 Lines
 
-```typescript
-import { Agent, Runner } from "loom-agents";
+Orchestrate research, writing, and fact-checking with composable agents:
 
-async function main() {
-  const researchAgent = new Agent({
-    name: "Research Agent",
-    purpose: "Find up-to-date information on topics",
-    web_search: {
-      enabled: true,
-      config: {
-        search_context_size: "medium",
-        user_location: {
-          type: "approximate",
-          country: "US",
-        },
-      },
-    },
-  });
-
-  const runner = new Runner(researchAgent);
-  const result = await runner.run(
-    "Find information on the best restaurants in New York City"
-  );
-
-  console.log(result);
-}
-
-main().catch(console.error);
+```ts
+const deepResearchAgent = new Agent({
+  name: "Content Creator",
+  purpose: "Write fact-checked articles",
+  sub_agents: [researchAgent, writingAgent, factCheckAgent],
+});
 ```
 
-## Building Complex Research Systems
+LOOM handles delegation, recursion, and context sharing for you.
 
-Combine multiple agents with different capabilities to create powerful research systems:
+---
 
-```typescript
-import { Agent, Runner } from "loom-agents";
+## Agent Options
 
-async function main() {
-  const researchAgent = new Agent({
-    name: "Research Agent",
-    purpose: "Gather information on topics",
-    web_search: {
-      enabled: true,
-    },
-  });
+| Key           | Type       | Description |
+|---------------|------------|-------------|
+| `name`        | `string`   | Display name of the agent *(required)* |
+| `purpose`     | `string`   | The agent’s primary task *(required)* |
+| `model`       | `string`   | OpenAI model to use (default: `"gpt-4o"`) |
+| `sub_agents`  | `Agent[]`  | Child agents this agent can delegate to |
+| `tools`       | `ToolCall[]` | Tools this agent can call |
+| `web_search`  | `object`   | Enable and configure real-time search |
 
-  const writingAgent = new Agent({
-    name: "Writing Agent",
-    purpose: "Create well-structured content based on research",
-  });
-
-  const factCheckAgent = new Agent({
-    name: "Fact Check Agent",
-    purpose: "Verify factual accuracy of content",
-    web_search: {
-      enabled: true,
-    },
-  });
-
-  // Create the content production system
-  const deepResearchAgent = new Agent({
-    name: "Content Creation Agent",
-    purpose: "Produce high-quality, factually accurate articles.",
-    sub_agents: [researchAgent, writingAgent, factCheckAgent],
-  });
-
-  const runner = new Runner(deepResearchAgent);
-  const result = await runner.run(
-    "Create an article about recent advances in renewable energy, include citations from the researcher. Fact check your work."
-  );
-
-  console.log(result);
-}
-
-main().catch(console.error);
-```
-
-## Agent Configuration Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `name` | string | Name of the agent (required) |
-| `purpose` | string | The agent's primary objective (required) |
-| `model` | string | OpenAI model to use (default: "gpt-4o") |
-| `sub_agents` | Agent[] | Child agents that can be called by this agent |
-| `tools` | ToolCall[] | Custom tools the agent can use |
-| `web_search` | object | Web search configuration |
+---
 
 ## License
 
-MIT
+MIT — simple and open, like LOOM itself.
