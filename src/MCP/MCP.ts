@@ -8,7 +8,7 @@ import { CallToolRequest } from "@modelcontextprotocol/sdk/types";
 
 export abstract class MCPServerBase {
   protected transport: SSEClientTransport | StdioClientTransport;
-  protected client: Client | undefined;
+  protected _client: Client | undefined;
   protected tools: any;
 
   constructor(transport: SSEClientTransport | StdioClientTransport) {
@@ -20,25 +20,79 @@ export abstract class MCPServerBase {
       return this.tools;
     }
 
-    if (!this.client) {
-      this.client = new Client({
+    if (!this._client) {
+      this._client = new Client({
         name: "loom-agents",
         version: process.env.npm_package_version || "<unknown>",
       });
 
-      await this.client.connect(this.transport);
+      await this._client.connect(this.transport);
     }
 
-    this.tools = await this.client.listTools();
+    this.tools = await this._client.listTools();
     return this.tools;
   }
 
   async callTool(params: CallToolRequest["params"]) {
-    if (!this.client) {
-      throw new Error("Client is not connected");
+    if (!this._client) {
+      this._client = new Client({
+        name: "loom-agents",
+        version: process.env.npm_package_version || "<unknown>",
+      });
+
+      await this._client.connect(this.transport);
     }
 
-    return this.client.callTool(params);
+    return this._client.callTool(params);
+  }
+
+  async getResourceTemplates() {
+    if (!this._client) {
+      this._client = new Client({
+        name: "loom-agents",
+        version: process.env.npm_package_version || "<unknown>",
+      });
+
+      await this._client.connect(this.transport);
+    }
+
+    return this._client.listResourceTemplates();
+  }
+
+  async getResources() {
+    if (!this._client) {
+      this._client = new Client({
+        name: "loom-agents",
+        version: process.env.npm_package_version || "<unknown>",
+      });
+
+      await this._client.connect(this.transport);
+    }
+
+    return this._client.listResources();
+  }
+
+  async readResource(uri: string, params?: any) {
+    if (!this._client) {
+      this._client = new Client({
+        name: "loom-agents",
+        version: process.env.npm_package_version || "<unknown>",
+      });
+
+      await this._client.connect(this.transport);
+    }
+
+    return this._client.readResource({ uri }, params);
+  }
+
+  get client() {
+    if (!this._client) {
+      this._client = new Client({
+        name: "loom-agents",
+        version: process.env.npm_package_version || "<unknown>",
+      });
+    }
+    return this._client;
   }
 }
 

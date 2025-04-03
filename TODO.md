@@ -3,7 +3,8 @@
 - [ ] Ensure that function call w/ output_text _is properly_ resolved, it seems like the fixes put in place after noticing this occuring resolved it, but it was already quite rare so need to make sure. I don't know if completions api can have multiple choices not bound to `n`, hard to test against this edge case. 
 - [ ] Add mcp context support
     - [ ] MCP Prompts
-    - [ ] MCP Resources
+    - [X] MCP Resources
+    - [ ] Integrations debate, do MCP resources / prompts / other get pushed into the Agents general context or do developers just have exposure to integrate? 
 - [ ] More involved agent examples
 - [ ] Add Agent output_type to support structured schema output
 - [ ] Find bugs
