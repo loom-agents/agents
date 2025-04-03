@@ -48,6 +48,12 @@ export interface WebSearchConfig {
   };
 }
 
+export interface OutputType {
+  type: "text" | "json_object" | "json_schema";
+  name?: string;
+  schema?: SchemaFragment<any> | Record<string, any>;
+}
+
 export interface AgentConfig {
   name: string;
   purpose: string;
@@ -57,6 +63,8 @@ export interface AgentConfig {
   model?: string;
   web_search?: WebSearchConfig;
   timeout_ms?: number;
+
+  output_type?: OutputType;
 
   client_config?: ClientOptions;
   request_options?:
@@ -401,20 +409,39 @@ export class Agent {
       messages: [
         {
           role: "system",
-          content: `You are an AI Agent, your purpose is to (${
-            this.config.purpose
-          }). ${
-            this.config.sub_agents && this.config.sub_agents.length > 0
-              ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: {${this.config.sub_agents
-                  .map((agent) => `${agent.config.name}`)
-                  .join(", ")}}`
-              : ""
-          } Consider using all the tools available to you to achieve this. Start acting immediately.`,
+          content:
+            `You are an AI Agent, your purpose is to (${
+              this.config.purpose
+            }). ${
+              this.config.sub_agents && this.config.sub_agents.length > 0
+                ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: {${this.config.sub_agents
+                    .map((agent) => `${agent.config.name}`)
+                    .join(", ")}}`
+                : ""
+            } Consider using all the tools available to you to achieve this. Start acting immediately.` +
+            (this.config.output_type?.type === "json_object"
+              ? `
+          Please respond in this json format: ${JSON.stringify(
+            this.config.output_type?.schema?.toSchema()
+          )}`
+              : ""),
         },
         ...context,
       ] as ChatCompletionMessageParam[],
       tools: this.ToolsToCompletionTools(await this.prepareTools()),
       web_search_options: final_web_search_options,
+      response_format: {
+        type: this.config?.output_type?.type || "text",
+        ...(this.config.output_type?.type === "json_schema" && {
+          json_schema: {
+            ...(this.config.output_type.name && {
+              name: this.config.output_type?.name,
+            }),
+            schema: this.config.output_type?.schema?.toSchema(),
+            strict: true,
+          },
+        }),
+      },
 
       ...((this.config.request_options as any) ?? {}),
     });
@@ -556,19 +583,39 @@ export class Agent {
       input: [
         {
           role: "system",
-          content: `You are an AI Agent, your purpose is to (${
-            this.config.purpose
-          }). ${
-            this.config.sub_agents && this.config.sub_agents.length > 0
-              ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: {${this.config.sub_agents
-                  .map((agent) => `${agent.config.name}`)
-                  .join(", ")}}`
-              : ""
-          } Consider using all the tools available to you to achieve this. Start acting immediately.`,
+          content:
+            `You are an AI Agent, your purpose is to (${
+              this.config.purpose
+            }). ${
+              this.config.sub_agents && this.config.sub_agents.length > 0
+                ? `You can query the following 'sub_agents' with the 'CallSubAgent' tool: {${this.config.sub_agents
+                    .map((agent) => `${agent.config.name}`)
+                    .join(", ")}}`
+                : ""
+            } Consider using all the tools available to you to achieve this. Start acting immediately.` +
+            (this.config.output_type?.type === "json_object"
+              ? `
+          Please respond in this json format: ${JSON.stringify(
+            this.config.output_type?.schema?.toSchema()
+          )}`
+              : ""),
         },
         ...context,
       ] as ResponseInputItem[],
       tools: await this.prepareTools(),
+      text: {
+        format: {
+          type: this.config.output_type?.type || "text",
+          ...(this.config.output_type?.type === "json_schema" &&
+            this.config?.output_type?.name && {
+              name: this.config?.output_type?.name,
+            }),
+          ...(this.config.output_type?.type === "json_schema" && {
+            schema: this.config?.output_type?.schema?.toSchema(),
+            strict: true,
+          }),
+        },
+      },
       ...((this.config.request_options as any) ?? {}),
     });
 

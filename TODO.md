@@ -1,17 +1,19 @@
 # TODO List
 
+- [ ] DRY up
+- [ ] Understand deeper what is actually needed as config props for things -- revise simplify and standardize. (1.1.0 prep item)
 - [ ] Ensure that function call w/ output_text _is properly_ resolved, it seems like the fixes put in place after noticing this occuring resolved it, but it was already quite rare so need to make sure. I don't know if completions api can have multiple choices not bound to `n`, hard to test against this edge case. 
 - [ ] Add mcp context support
     - [ ] MCP Prompts
     - [X] MCP Resources
     - [ ] Integrations debate, do MCP resources / prompts / other get pushed into the Agents general context or do developers just have exposure to integrate? 
 - [ ] More involved agent examples
-- [ ] Add Agent output_type to support structured schema output
 - [ ] Find bugs
 - [ ] If a sub agent type mismatches a parent agent type the context fed in needs to be normalized or it is misaligned and bad things happen
 - [ ] UUID _everything_
 - [ ] normalize trace names, most likely `${Class}.${Function}` 
 - [ ] Debugging
+- [X] Add Agent output_type to support structured schema output
 - [X] Normalize Agent tool use, refactor down to a simpler _dry_er wrapper. 
 - [X] Validate sub agent flow is proper, maybe sub agents need more context. (maybe we have a flow where agents decide what of their output / task was valid or useful context, kind of sounds like something a dev would decide on instead of loom itself? thinking. ) (Marking complete w/ addition of `examples/debate-orchestration.ts / debate.json sample`)
 - [X] Per agent configs (ability to use claude for example for HTML Coding agents while using o3 for reasoning or deepseek for cheaper general agents) 
